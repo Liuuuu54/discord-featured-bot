@@ -12,6 +12,7 @@
 - 🛡️ **权限控制**: 只有楼主可以精選留言
 - 🔄 **跨帖重复**: 不同帖子中可以重复精選同一用户
 - 🔒 **隐私保护**: 积分查询仅对用户本人可见
+- 🌐 **多群组支持**: 支持在多个 Discord 群组中独立运行
 
 ## 使用规则
 
@@ -176,7 +177,7 @@ dc_bot/
 ├── bot.py              # 主机器人文件
 ├── config.py           # 配置文件
 ├── database.py         # 数据库管理
-├── db_checker.py       # 数据库检查工具
+├── db_checker.py       # 数据库检查工具（支持简单/详细模式）
 ├── requirements.txt    # 依赖包
 ├── env_example.txt     # 环境变量示例
 ├── railway.json        # Railway 部署配置
@@ -187,15 +188,48 @@ dc_bot/
 
 ## 工具说明
 
-### 数据库检查工具 (db_checker.py)
-用于检查和调试数据库内容：
+### 数据库检查工具
+
+#### 本地使用
 ```bash
-# 查看数据库概览
+# 详细检查（默认）
 python db_checker.py
+
+# 简单检查（适合 Railway 环境）
+python db_checker.py --simple
 
 # 交互式查询
 python db_checker.py --interactive
+
+# 检查特定群组
+python db_checker.py --guild 123456789
+
+# 查看帮助
+python db_checker.py --help
 ```
+
+#### Railway 环境使用
+
+**方法 1: Railway CLI（推荐）**
+```bash
+# 安装 Railway CLI
+npm install -g @railway/cli
+
+# 登录并连接项目
+railway login
+railway link
+
+# 运行检查工具
+railway run python db_checker.py --simple
+railway run python db_checker.py --interactive
+railway run python db_checker.py --guild 123456789
+```
+
+**方法 2: Railway Web 界面**
+1. 在 Railway 项目页面点击 "Deployments"
+2. 选择最新部署，点击 "Logs"
+3. 在 "Settings" 中临时修改启动命令为 `python db_checker.py --simple`
+4. 查看日志输出
 
 ## 故障排除
 

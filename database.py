@@ -13,35 +13,39 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
-        # 创建用户积分表
+        # 创建用户积分表 (支持多群组)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_points (
-                user_id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
                 username TEXT NOT NULL,
                 points INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, guild_id)
             )
         ''')
         
-        # 创建月度积分表
+        # 创建月度积分表 (支持多群组)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS monthly_points (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
                 username TEXT NOT NULL,
                 points INTEGER DEFAULT 0,
                 year_month TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, year_month)
+                UNIQUE(user_id, guild_id, year_month)
             )
         ''')
         
-        # 创建精選记录表
+        # 创建精選记录表 (支持多群组)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS featured_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
                 thread_id INTEGER NOT NULL,
                 message_id INTEGER NOT NULL,
                 author_id INTEGER NOT NULL,
@@ -54,27 +58,32 @@ class DatabaseManager:
             )
         ''')
         
+        # 添加索引以提高查询性能
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_points_guild ON user_points(guild_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_monthly_points_guild ON monthly_points(guild_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_featured_messages_guild ON featured_messages(guild_id)')
+        
         conn.commit()
         conn.close()
     
-    def get_user_points(self, user_id: int) -> int:
-        """获取用户积分"""
+    def get_user_points(self, user_id: int, guild_id: int) -> int:
+        """获取用户在指定群组的积分"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
-        cursor.execute('SELECT points FROM user_points WHERE user_id = ?', (user_id,))
+        cursor.execute('SELECT points FROM user_points WHERE user_id = ? AND guild_id = ?', (user_id, guild_id))
         result = cursor.fetchone()
         
         conn.close()
         return result[0] if result else 0
     
-    def add_user_points(self, user_id: int, username: str, points: int) -> int:
-        """给用户添加积分"""
+    def add_user_points(self, user_id: int, username: str, points: int, guild_id: int) -> int:
+        """给用户在指定群组添加积分"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
         # 检查用户是否存在
-        cursor.execute('SELECT points FROM user_points WHERE user_id = ?', (user_id,))
+        cursor.execute('SELECT points FROM user_points WHERE user_id = ? AND guild_id = ?', (user_id, guild_id))
         result = cursor.fetchone()
         
         if result:
@@ -83,15 +92,15 @@ class DatabaseManager:
             cursor.execute('''
                 UPDATE user_points 
                 SET points = ?, username = ?, updated_at = CURRENT_TIMESTAMP 
-                WHERE user_id = ?
-            ''', (new_points, username, user_id))
+                WHERE user_id = ? AND guild_id = ?
+            ''', (new_points, username, user_id, guild_id))
         else:
             # 用户不存在，创建新记录
             new_points = points
             cursor.execute('''
-                INSERT INTO user_points (user_id, username, points)
-                VALUES (?, ?, ?)
-            ''', (user_id, username, new_points))
+                INSERT INTO user_points (user_id, guild_id, username, points)
+                VALUES (?, ?, ?, ?)
+            ''', (user_id, guild_id, username, new_points))
         
         conn.commit()
         conn.close()
@@ -112,7 +121,7 @@ class DatabaseManager:
         
         return result is not None
     
-    def add_featured_message(self, thread_id: int, message_id: int, 
+    def add_featured_message(self, guild_id: int, thread_id: int, message_id: int, 
                            author_id: int, author_name: str,
                            featured_by_id: int, featured_by_name: str, reason: str = None) -> bool:
         """添加精選记录"""
@@ -122,9 +131,9 @@ class DatabaseManager:
             
             cursor.execute('''
                 INSERT INTO featured_messages 
-                (thread_id, message_id, author_id, author_name, featured_by_id, featured_by_name, reason)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (thread_id, message_id, author_id, author_name, featured_by_id, featured_by_name, reason))
+                (guild_id, thread_id, message_id, author_id, author_name, featured_by_id, featured_by_name, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (guild_id, thread_id, message_id, author_id, author_name, featured_by_id, featured_by_name, reason))
             
             conn.commit()
             conn.close()
@@ -134,27 +143,27 @@ class DatabaseManager:
             conn.close()
             return False
     
-    def get_user_stats(self, user_id: int) -> Dict:
-        """获取用户统计信息"""
+    def get_user_stats(self, user_id: int, guild_id: int) -> Dict:
+        """获取用户在指定群组的统计信息"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
         # 获取积分和用户名
-        cursor.execute('SELECT points, username FROM user_points WHERE user_id = ?', (user_id,))
+        cursor.execute('SELECT points, username FROM user_points WHERE user_id = ? AND guild_id = ?', (user_id, guild_id))
         points_result = cursor.fetchone()
         points = points_result[0] if points_result else 0
         username = points_result[1] if points_result else None
         
-        # 获取被精選次数
+        # 获取被精選次数 (仅限当前群组)
         cursor.execute('''
-            SELECT COUNT(*) FROM featured_messages WHERE author_id = ?
-        ''', (user_id,))
+            SELECT COUNT(*) FROM featured_messages WHERE author_id = ? AND guild_id = ?
+        ''', (user_id, guild_id))
         featured_count = cursor.fetchone()[0]
         
-        # 获取精選他人次数
+        # 获取精選他人次数 (仅限当前群组)
         cursor.execute('''
-            SELECT COUNT(*) FROM featured_messages WHERE featured_by_id = ?
-        ''', (user_id,))
+            SELECT COUNT(*) FROM featured_messages WHERE featured_by_id = ? AND guild_id = ?
+        ''', (user_id, guild_id))
         featuring_count = cursor.fetchone()[0]
         
         conn.close()
@@ -191,29 +200,29 @@ class DatabaseManager:
             for row in results
         ]
     
-    def get_user_featured_records(self, user_id: int, page: int = 1, per_page: int = 5) -> Tuple[List[Dict], int]:
-        """获取用户被精選的记录（分页）"""
+    def get_user_featured_records(self, user_id: int, guild_id: int, page: int = 1, per_page: int = 5) -> Tuple[List[Dict], int]:
+        """获取用户在指定群组被精選的记录（分页）"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
         # 获取总记录数
         cursor.execute('''
-            SELECT COUNT(*) FROM featured_messages WHERE author_id = ?
-        ''', (user_id,))
+            SELECT COUNT(*) FROM featured_messages 
+            WHERE author_id = ? AND guild_id = ?
+        ''', (user_id, guild_id))
         total_count = cursor.fetchone()[0]
         
-        # 计算总页数
-        total_pages = (total_count + per_page - 1) // per_page
-        
-        # 获取当前页的记录
+        # 计算偏移量
         offset = (page - 1) * per_page
+        
+        # 获取分页数据
         cursor.execute('''
-            SELECT thread_id, message_id, featured_by_name, featured_at, reason
+            SELECT thread_id, message_id, featured_at, featured_by_name, reason
             FROM featured_messages 
-            WHERE author_id = ?
+            WHERE author_id = ? AND guild_id = ?
             ORDER BY featured_at DESC
             LIMIT ? OFFSET ?
-        ''', (user_id, per_page, offset))
+        ''', (user_id, guild_id, per_page, offset))
         
         results = cursor.fetchall()
         conn.close()
@@ -222,57 +231,56 @@ class DatabaseManager:
             {
                 'thread_id': row[0],
                 'message_id': row[1],
-                'featured_by_name': row[2],
-                'featured_at': row[3],
+                'featured_at': row[2],
+                'featured_by_name': row[3],
                 'reason': row[4]
             }
             for row in results
         ]
         
-        return records, total_pages
-    
+        return records, total_count
+
     def get_current_month(self) -> str:
-        """獲取當前年月格式 (YYYY-MM)"""
-        from datetime import datetime
-        return datetime.now().strftime("%Y-%m")
+        """获取当前年月"""
+        return datetime.now().strftime('%Y-%m')
     
-    def add_monthly_points(self, user_id: int, username: str, points: int) -> int:
-        """給用戶添加月度積分"""
+    def add_monthly_points(self, user_id: int, username: str, points: int, guild_id: int) -> int:
+        """给用户在指定群组添加月度积分"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
         year_month = self.get_current_month()
         
-        # 檢查用戶在當前月份是否已有記錄
+        # 检查是否已存在月度积分记录
         cursor.execute('''
             SELECT points FROM monthly_points 
-            WHERE user_id = ? AND year_month = ?
-        ''', (user_id, year_month))
+            WHERE user_id = ? AND guild_id = ? AND year_month = ?
+        ''', (user_id, guild_id, year_month))
         
-        result = cursor.fetchone()
+        existing = cursor.fetchone()
         
-        if result:
-            # 用戶存在，更新積分
-            new_points = result[0] + points
+        if existing:
+            # 更新现有记录
+            new_points = existing[0] + points
             cursor.execute('''
                 UPDATE monthly_points 
                 SET points = ?, username = ?, updated_at = CURRENT_TIMESTAMP 
-                WHERE user_id = ? AND year_month = ?
-            ''', (new_points, username, user_id, year_month))
+                WHERE user_id = ? AND guild_id = ? AND year_month = ?
+            ''', (new_points, username, user_id, guild_id, year_month))
         else:
-            # 用戶不存在，創建新記錄
+            # 创建新记录
             new_points = points
             cursor.execute('''
-                INSERT INTO monthly_points (user_id, username, points, year_month)
-                VALUES (?, ?, ?, ?)
-            ''', (user_id, username, new_points, year_month))
+                INSERT INTO monthly_points (user_id, guild_id, username, points, year_month)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (user_id, guild_id, username, new_points, year_month))
         
         conn.commit()
         conn.close()
         return new_points
     
-    def get_monthly_ranking(self, limit: int = 10) -> List[Dict]:
-        """獲取月度積分排行榜"""
+    def get_monthly_ranking(self, guild_id: int, limit: int = 10) -> List[Dict]:
+        """获取指定群组的月度积分排行榜"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
@@ -281,10 +289,10 @@ class DatabaseManager:
         cursor.execute('''
             SELECT user_id, username, points
             FROM monthly_points 
-            WHERE year_month = ?
+            WHERE guild_id = ? AND year_month = ?
             ORDER BY points DESC
             LIMIT ?
-        ''', (year_month, limit))
+        ''', (guild_id, year_month, limit))
         
         results = cursor.fetchall()
         conn.close()
@@ -293,14 +301,13 @@ class DatabaseManager:
             {
                 'user_id': row[0],
                 'username': row[1],
-                'points': row[2],
-                'rank': i + 1
+                'points': row[2]
             }
-            for i, row in enumerate(results)
+            for row in results
         ]
     
-    def get_user_monthly_points(self, user_id: int) -> int:
-        """獲取用戶當前月度積分"""
+    def get_user_monthly_points(self, user_id: int, guild_id: int) -> int:
+        """获取用户在指定群组的月度积分"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
@@ -308,35 +315,37 @@ class DatabaseManager:
         
         cursor.execute('''
             SELECT points FROM monthly_points 
-            WHERE user_id = ? AND year_month = ?
-        ''', (user_id, year_month))
+            WHERE user_id = ? AND guild_id = ? AND year_month = ?
+        ''', (user_id, guild_id, year_month))
         
         result = cursor.fetchone()
         conn.close()
         
         return result[0] if result else 0
     
-    def clear_monthly_points(self, year_month: str = None) -> bool:
-        """清空指定月份的積分（用於重置）"""
-        conn = sqlite3.connect(self.db_file)
-        cursor = conn.cursor()
-        
-        if year_month is None:
-            year_month = self.get_current_month()
-        
+    def clear_monthly_points(self, year_month: str = None, guild_id: int = None) -> bool:
+        """清除月度积分"""
         try:
-            cursor.execute('''
-                DELETE FROM monthly_points WHERE year_month = ?
-            ''', (year_month,))
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            if year_month is None:
+                year_month = self.get_current_month()
+            
+            if guild_id is None:
+                # 清除所有群组的月度积分
+                cursor.execute('DELETE FROM monthly_points WHERE year_month = ?', (year_month,))
+            else:
+                # 清除指定群组的月度积分
+                cursor.execute('DELETE FROM monthly_points WHERE year_month = ? AND guild_id = ?', (year_month, guild_id))
             
             conn.commit()
             conn.close()
             return True
-        except Exception:
-            conn.close()
+        except Exception as e:
+            print(f"清除月度积分时发生错误: {e}")
             return False
-    
+
     def get_message_preview(self, thread_id: int, message_id: int) -> str:
-        """獲取留言內容預覽（這個方法需要通過 Discord API 實現）"""
-        # 這個方法需要在 bot.py 中實現，因為需要 Discord API
-        return None 
+        """获取消息预览（这里返回一个简单的链接）"""
+        return f"https://discord.com/channels/@me/{thread_id}/{message_id}" 

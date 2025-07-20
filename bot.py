@@ -56,7 +56,7 @@ class FeaturedRecordsView(discord.ui.View):
     async def get_records_embed(self) -> discord.Embed:
         """獲取當前頁面的記錄嵌入訊息"""
         records, total_pages = self.bot.db.get_user_featured_records(
-            self.user_id, self.current_page, self.per_page
+            self.user_id, self.guild_id, self.current_page, self.per_page
         )
         
         # 獲取用戶資訊
@@ -66,7 +66,7 @@ class FeaturedRecordsView(discord.ui.View):
         else:
             # 如果用戶不在快取中，嘗試從資料庫獲取用戶名
             try:
-                stats = self.bot.db.get_user_stats(self.user_id)
+                stats = self.bot.db.get_user_stats(self.user_id, self.guild_id)
                 username = stats['username'] if stats['username'] else f"用戶{self.user_id}"
             except:
                 username = f"用戶{self.user_id}"
@@ -182,7 +182,7 @@ class FeaturedRecordsView(discord.ui.View):
             return
         
         records, total_pages = self.bot.db.get_user_featured_records(
-            self.user_id, self.current_page, self.per_page
+            self.user_id, self.guild_id, self.current_page, self.per_page
         )
         
         if self.current_page < total_pages:
@@ -197,7 +197,7 @@ class FeaturedRecordsView(discord.ui.View):
             return
         
         records, total_pages = self.bot.db.get_user_featured_records(
-            self.user_id, self.current_page, self.per_page
+            self.user_id, self.guild_id, self.current_page, self.per_page
         )
         
         self.current_page = total_pages
@@ -252,6 +252,7 @@ class FeaturedCommands(commands.Cog):
             
             # 添加精選记录
             success = self.db.add_featured_message(
+                guild_id=interaction.guild_id,
                 thread_id=thread_id,
                 message_id=message.id,
                 author_id=message.author.id,
@@ -269,14 +270,16 @@ class FeaturedCommands(commands.Cog):
             new_points = self.db.add_user_points(
                 user_id=message.author.id,
                 username=message.author.display_name,
-                points=config.POINTS_PER_FEATURE
+                points=config.POINTS_PER_FEATURE,
+                guild_id=interaction.guild_id
             )
             
             # 给用户添加月度积分
             new_monthly_points = self.db.add_monthly_points(
                 user_id=message.author.id,
                 username=message.author.display_name,
-                points=config.POINTS_PER_FEATURE
+                points=config.POINTS_PER_FEATURE,
+                guild_id=interaction.guild_id
             )
             
             # 创建精選通知
@@ -327,7 +330,7 @@ class FeaturedCommands(commands.Cog):
     async def ranking(self, interaction: discord.Interaction):
         """查看月度積分排行榜"""
         try:
-            ranking_data = self.db.get_monthly_ranking(10)
+            ranking_data = self.db.get_monthly_ranking(interaction.guild_id, 10)
             current_month = self.db.get_current_month()
             
             embed = discord.Embed(
@@ -344,20 +347,20 @@ class FeaturedCommands(commands.Cog):
                     inline=False
                 )
             else:
-                for rank_info in ranking_data:
+                for i, rank_info in enumerate(ranking_data, 1):
                     # 獲取用戶資訊
                     user = self.bot.get_user(rank_info['user_id'])
                     username = user.display_name if user else rank_info['username']
                     
                     # 設置排名圖標
-                    if rank_info['rank'] == 1:
+                    if i == 1:
                         rank_icon = "🥇"
-                    elif rank_info['rank'] == 2:
+                    elif i == 2:
                         rank_icon = "🥈"
-                    elif rank_info['rank'] == 3:
+                    elif i == 3:
                         rank_icon = "🥉"
                     else:
-                        rank_icon = f"{rank_info['rank']}."
+                        rank_icon = f"{i}."
                     
                     embed.add_field(
                         name=f"{rank_icon} {username}",
@@ -384,7 +387,7 @@ class FeaturedCommands(commands.Cog):
         """查看积分命令（隱藏回應）"""
         try:
             user_id = interaction.user.id
-            stats = self.db.get_user_stats(user_id)
+            stats = self.db.get_user_stats(user_id, interaction.guild_id)
             
             # 創建分頁視圖
             view = FeaturedRecordsView(self.bot, user_id, interaction.guild_id, 1)
@@ -393,7 +396,7 @@ class FeaturedCommands(commands.Cog):
             embed = await view.get_records_embed()
             
             # 獲取月度積分
-            monthly_points = self.db.get_user_monthly_points(user_id)
+            monthly_points = self.db.get_user_monthly_points(user_id, interaction.guild_id)
             
             # 添加積分統計到嵌入訊息
             embed.add_field(
