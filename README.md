@@ -178,6 +178,7 @@ dc_bot/
 ├── config.py           # 配置文件
 ├── database.py         # 数据库管理
 ├── db_checker.py       # 数据库检查工具（支持简单/详细模式）
+├── health_check.py     # 健康检查服务器（Railway 部署用）
 ├── requirements.txt    # 依赖包
 ├── env_example.txt     # 环境变量示例
 ├── railway.json        # Railway 部署配置
@@ -253,6 +254,12 @@ railway run python db_checker.py --guild 123456789
 4. **月度积分显示异常**
    - 使用 `db_checker.py` 检查月度积分表
    - 确认数据库结构完整
+
+5. **Railway 健康检查失败**
+   - 机器人已内置健康检查服务器
+   - 在 Railway 环境中会自动启动
+   - 健康检查路径: `/`
+   - 超时时间: 30秒
 
 ### 日志查看
 机器人运行时会输出详细日志，包括:
