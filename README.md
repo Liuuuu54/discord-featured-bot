@@ -37,11 +37,17 @@ pip install -r requirements.txt
 ```
 
 ### 3. 配置环境变量
+
+#### 本地开发环境
 1. 复制 `env_example.txt` 为 `.env`
 2. 在 `.env` 文件中设置您的 Discord Bot Token:
 ```
 DISCORD_TOKEN=your_actual_bot_token_here
 ```
+#### Railway 部署环境
+在 Railway 项目设置中添加环境变量：
+1. 变量名: `DISCORD_TOKEN`
+2. 变量值: 您的 Discord Bot Token
 
 ### 4. 创建 Discord 机器人
 1. 访问 [Discord Developer Portal](https://discord.com/developers/applications)
@@ -62,9 +68,35 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_CLIENT_ID&permission
 ```
 
 ### 6. 运行机器人
+
+#### 本地运行
 ```bash
 python bot.py
 ```
+
+#### Railway 部署
+
+1. **连接 GitHub 仓库**
+   - 在 Railway 中创建新项目
+   - 选择 "Deploy from GitHub repo"
+   - 连接您的 GitHub 仓库
+
+2. **配置环境变量**
+   - 在项目设置中添加环境变量
+   - 变量名: `DISCORD_TOKEN`
+   - 变量值: 您的 Discord Bot Token
+
+3. **设置启动命令**
+   - 在 Railway 项目设置中设置启动命令:
+   ```bash
+   python bot.py
+   ```
+
+4. **自动部署**
+   - Railway 会自动检测代码变更并重新部署
+   - 每次推送到 GitHub 主分支都会触发自动部署
+
+> **Railway 优势**: 免费额度、自动部署、HTTPS 支持、无需服务器管理
 
 ## 命令说明
 
@@ -147,6 +179,8 @@ dc_bot/
 ├── db_checker.py       # 数据库检查工具
 ├── requirements.txt    # 依赖包
 ├── env_example.txt     # 环境变量示例
+├── railway.json        # Railway 部署配置
+├── RAILWAY_DEPLOY.md   # Railway 部署指南
 ├── README.md          # 说明文档
 └── featured_messages.db # 数据库文件（自动生成）
 ```
