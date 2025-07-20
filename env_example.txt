@@ -1,0 +1,4 @@
+# Discord Bot Token
+# 请从 Discord Developer Portal 获取您的机器人 Token
+# https://discord.com/developers/applications
+DISCORD_TOKEN=YOUR_TOKEN
