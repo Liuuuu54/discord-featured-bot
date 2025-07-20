@@ -529,27 +529,10 @@ async def main():
     except Exception as e:
         logger.error(f"启动机器人时发生错误: {e}")
 
-def start_with_health_check():
-    """啟動 Discord Bot 和健康檢查服務器"""
-    import threading
-    import os
-    from health_check import start_health_server
-    
-    # 檢查是否在 Railway 環境
-    if os.environ.get('RAILWAY_ENVIRONMENT'):
-        # 在 Railway 環境中，啟動健康檢查服務器
-        port = int(os.environ.get('PORT', 8080))
-        health_thread = threading.Thread(
-            target=start_health_server, 
-            args=(port,), 
-            daemon=True
-        )
-        health_thread.start()
-        print(f"🏥 健康檢查服務器已啟動在端口 {port}")
-    
-    # 啟動 Discord Bot
+def start_bot():
+    """啟動 Discord Bot"""
     import asyncio
     asyncio.run(main())
 
 if __name__ == "__main__":
-    start_with_health_check() 
+    start_bot() 
