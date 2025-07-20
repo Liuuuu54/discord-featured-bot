@@ -40,7 +40,7 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精選, /积分, /帖子统计, /排行榜, /帮助')
+        logger.info('📋 可用命令: /精選, /积分, /帖子统计, /排行榜')
         logger.info('=' * 50)
 
 class FeaturedRecordsView(discord.ui.View):
@@ -565,49 +565,7 @@ class FeaturedCommands(commands.Cog):
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
                 # 如果連 followup 都失敗，就記錄錯誤但不拋出異常
     
-    @app_commands.command(name="帮助", description="查看机器人使用说明")
-    async def help_command(self, interaction: discord.Interaction):
-        """帮助命令"""
-        embed = discord.Embed(
-            title=f"🤖 {config.BOT_NAME} 使用说明",
-            description="这是一个留言精選机器人，帮助楼主管理优质留言并奖励用户。",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow()
-        )
-        
-        embed.add_field(
-            name="🌟 /精選",
-            value="将指定用户的留言设为精選\n• 只有楼主可以使用\n• 每个帖子中每位用户只能被精選一次\n• 被精選用户获得1积分\n• 跨帖子可以重复精選",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📊 /积分",
-            value="查看自己的积分和精選记录（仅自己可见）",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🏆 /排行榜",
-            value="查看月度積分排行榜（仅自己可见）\n• 显示本月精選積分排名前十名\n• 每月1日自動重置積分",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📈 /帖子统计",
-            value="查看当前帖子的精選统计（仅自己可见）\n• 只能在帖子中使用",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📋 使用规则",
-            value="1. 只有楼主可以精選留言\n2. 不能精選自己的留言\n3. 每个帖子中每位用户只能被精選一次\n4. 跨帖子可以重复精選\n5. 每次精選获得1积分",
-            inline=False
-        )
-        
-        embed.set_footer(text="如有问题请联系管理员")
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 async def main():
     """主函数"""
