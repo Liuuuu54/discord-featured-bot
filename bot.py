@@ -52,6 +52,117 @@ class FeaturedRecordsView(discord.ui.View):
         self.guild_id = guild_id
         self.current_page = current_page
         self.per_page = 5
+
+class ThreadStatsView(discord.ui.View):
+    """帖子統計分頁視圖"""
+    def __init__(self, bot: FeaturedMessageBot, thread_id: int, guild_id: int, current_page: int = 1):
+        super().__init__(timeout=300)  # 5分鐘超時
+        self.bot = bot
+        self.thread_id = thread_id
+        self.guild_id = guild_id
+        self.current_page = current_page
+        self.per_page = 5
+    
+    async def get_stats_embed(self) -> discord.Embed:
+        """獲取當前頁面的統計嵌入訊息"""
+        # 獲取所有統計數據
+        all_stats = self.bot.db.get_thread_stats(self.thread_id)
+        
+        if not all_stats:
+            embed = discord.Embed(
+                title="📊 帖子精選統計",
+                description="此帖子還沒有精選記錄",
+                color=discord.Color.light_grey(),
+                timestamp=discord.utils.utcnow()
+            )
+            return embed
+        
+        # 計算分頁
+        total_records = len(all_stats)
+        total_pages = (total_records + self.per_page - 1) // self.per_page
+        start_idx = (self.current_page - 1) * self.per_page
+        end_idx = min(start_idx + self.per_page, total_records)
+        current_stats = all_stats[start_idx:end_idx]
+        
+        embed = discord.Embed(
+            title="📊 帖子精選統計",
+            description=f"共 {total_records} 條精選記錄 • 第 {self.current_page} 頁，共 {total_pages} 頁",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        for i, stat in enumerate(current_stats, start_idx + 1):
+            # 格式化時間
+            try:
+                featured_time = datetime.fromisoformat(stat['featured_at'].replace('Z', '+00:00'))
+                formatted_time = featured_time.strftime("%Y-%m-%d %H:%M")
+            except:
+                formatted_time = stat['featured_at']
+            
+            # 創建留言連結
+            message_link = f"https://discord.com/channels/{self.guild_id}/{self.thread_id}/{stat['message_id']}"
+            
+            # 構建記錄內容
+            record_content = f"**精選留言**: [點擊查看]({message_link})\n"
+            record_content += f"**時間**: {formatted_time}"
+            
+            # 如果有精選原因，添加到內容中
+            if stat.get('reason'):
+                record_content += f"\n**精選原因**: {stat['reason']}"
+            
+            embed.add_field(
+                name=f"{i}. {stat['author_name']}",
+                value=record_content,
+                inline=False
+            )
+        
+        # 更新按鈕狀態
+        self.update_buttons(total_pages)
+        
+        return embed
+    
+    def update_buttons(self, total_pages: int):
+        """更新按鈕狀態"""
+        # 第一頁按鈕
+        self.children[0].disabled = self.current_page <= 1
+        # 上一頁按鈕
+        self.children[1].disabled = self.current_page <= 1
+        # 下一頁按鈕
+        self.children[2].disabled = self.current_page >= total_pages
+        # 最後一頁按鈕
+        self.children[3].disabled = self.current_page >= total_pages
+    
+    @discord.ui.button(label="第一頁", style=discord.ButtonStyle.gray, emoji="⏮️")
+    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = 1
+        embed = await self.get_stats_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="上一頁", style=discord.ButtonStyle.primary, emoji="◀️")
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 1:
+            self.current_page -= 1
+            embed = await self.get_stats_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        all_stats = self.bot.db.get_thread_stats(self.thread_id)
+        total_pages = (len(all_stats) + self.per_page - 1) // self.per_page
+        
+        if self.current_page < total_pages:
+            self.current_page += 1
+            embed = await self.get_stats_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
+    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        all_stats = self.bot.db.get_thread_stats(self.thread_id)
+        total_pages = (len(all_stats) + self.per_page - 1) // self.per_page
+        
+        self.current_page = total_pages
+        embed = await self.get_stats_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
         
     async def get_records_embed(self) -> discord.Embed:
         """獲取當前頁面的記錄嵌入訊息"""
@@ -370,7 +481,7 @@ class FeaturedCommands(commands.Cog):
             
             embed.set_footer(text=f"每月1日重置積分 • 當前月份: {current_month}")
             
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
             logger.error(f"查看排行榜时发生错误: {e}")
@@ -432,35 +543,15 @@ class FeaturedCommands(commands.Cog):
                 return
             
             thread_id = interaction.channel.id
-            stats = self.db.get_thread_stats(thread_id)
             
-            if not stats:
-                embed = discord.Embed(
-                    title="📊 帖子精選统计",
-                    description="此帖子还没有精選记录",
-                    color=discord.Color.light_grey(),
-                    timestamp=discord.utils.utcnow()
-                )
-            else:
-                embed = discord.Embed(
-                    title="📊 帖子精選统计",
-                    description=f"共 {len(stats)} 条精選记录",
-                    color=discord.Color.green(),
-                    timestamp=discord.utils.utcnow()
-                )
-                
-                for i, stat in enumerate(stats[:10], 1):  # 最多显示10条
-                    embed.add_field(
-                        name=f"{i}. {stat['author_name']}",
-                        value=f"精選者: {stat['featured_by_name']}\n时间: {stat['featured_at']}",
-                        inline=False
-                    )
-                
-                if len(stats) > 10:
-                    embed.set_footer(text=f"显示前10条记录，共{len(stats)}条")
+            # 創建分頁視圖
+            view = ThreadStatsView(self.bot, thread_id, interaction.guild_id, 1)
+            
+            # 獲取嵌入訊息
+            embed = await view.get_stats_embed()
             
             # 使用 ephemeral=True 讓回應只有使用者自己可見
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             logger.error(f"查看帖子统计时发生错误: {e}")
@@ -492,19 +583,19 @@ class FeaturedCommands(commands.Cog):
         
         embed.add_field(
             name="📊 /积分",
-            value="查看自己的积分和精選记录（仅自己可见）\n• 显示总积分、本月积分、被精選次数、精選他人次数\n• 显示精選记录列表，支持分頁浏览\n• 包含原帖連結、精選留言連結、精選者、時間、精選原因",
+            value="查看自己的积分和精選记录（仅自己可见）",
             inline=False
         )
         
         embed.add_field(
             name="🏆 /排行榜",
-            value="查看月度積分排行榜\n• 显示本月精選積分排名前十名\n• 每月1日自動重置積分\n• 包含金銀銅牌圖標",
+            value="查看月度積分排行榜（仅自己可见）\n• 显示本月精選積分排名前十名\n• 每月1日自動重置積分",
             inline=False
         )
         
         embed.add_field(
             name="📈 /帖子统计",
-            value="查看当前帖子的精選统计（仅自己可见）\n• 只能在帖子中使用\n• 显示所有精選记录",
+            value="查看当前帖子的精選统计（仅自己可见）\n• 只能在帖子中使用",
             inline=False
         )
         
@@ -516,7 +607,7 @@ class FeaturedCommands(commands.Cog):
         
         embed.set_footer(text="如有问题请联系管理员")
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def main():
     """主函数"""
