@@ -182,7 +182,6 @@ dc_bot/
 ├── requirements.txt    # 依赖包
 ├── env_example.txt     # 环境变量示例
 ├── railway.json        # Railway 部署配置
-├── RAILWAY_DEPLOY.md   # Railway 部署指南
 ├── README.md          # 说明文档
 └── featured_messages.db # 数据库文件（自动生成）
 ```
