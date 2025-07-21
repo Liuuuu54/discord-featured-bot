@@ -1,4 +1,10 @@
-# Discord Bot Token
-# 请从 Discord Developer Portal 获取您的机器人 Token
-# https://discord.com/developers/applications
-DISCORD_TOKEN=YOUR_TOKEN
+# Discord Bot 配置
+DISCORD_TOKEN=your_discord_bot_token_here
+BOT_NAME=留言精選機器人
+
+# 數據庫配置
+DATABASE_PATH=./data/bot_database.db
+
+# 部署配置
+# 本地開發時使用 .env 文件
+# VPS 部署時使用環境變量

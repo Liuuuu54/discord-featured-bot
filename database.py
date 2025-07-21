@@ -121,6 +121,84 @@ class DatabaseManager:
         
         return result is not None
     
+    def get_featured_message_by_id(self, message_id: int, thread_id: int) -> Dict:
+        """根据留言ID和帖子ID获取精選记录"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT guild_id, author_id, author_name, featured_by_id, featured_by_name, featured_at
+            FROM featured_messages 
+            WHERE message_id = ? AND thread_id = ?
+        ''', (message_id, thread_id))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return {
+                'guild_id': result[0],
+                'author_id': result[1],
+                'author_name': result[2],
+                'featured_by_id': result[3],
+                'featured_by_name': result[4],
+                'featured_at': result[5]
+            }
+        return None
+    
+    def remove_featured_message(self, message_id: int, thread_id: int) -> bool:
+        """移除精選记录并更新相关积分"""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 获取精選记录信息
+            featured_info = self.get_featured_message_by_id(message_id, thread_id)
+            if not featured_info:
+                conn.close()
+                return False
+            
+            # 开始事务
+            cursor.execute('BEGIN TRANSACTION')
+            
+            try:
+                # 1. 删除精選记录
+                cursor.execute('''
+                    DELETE FROM featured_messages 
+                    WHERE message_id = ? AND thread_id = ?
+                ''', (message_id, thread_id))
+                
+                # 2. 减少被精選用户的积分
+                cursor.execute('''
+                    UPDATE user_points 
+                    SET points = points - 1, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = ? AND guild_id = ?
+                ''', (featured_info['author_id'], featured_info['guild_id']))
+                
+                # 3. 减少被精選用户的月度积分
+                year_month = self.get_current_month()
+                cursor.execute('''
+                    UPDATE monthly_points 
+                    SET points = points - 1, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = ? AND guild_id = ? AND year_month = ?
+                ''', (featured_info['author_id'], featured_info['guild_id'], year_month))
+                
+                # 提交事务
+                cursor.execute('COMMIT')
+                conn.close()
+                return True
+                
+            except Exception as e:
+                # 回滚事务
+                cursor.execute('ROLLBACK')
+                conn.close()
+                print(f"移除精選记录时发生错误: {e}")
+                return False
+                
+        except Exception as e:
+            print(f"移除精選记录时发生错误: {e}")
+            return False
+    
     def add_featured_message(self, guild_id: int, thread_id: int, message_id: int, 
                            author_id: int, author_name: str,
                            featured_by_id: int, featured_by_name: str, reason: str = None) -> bool:
@@ -198,7 +276,7 @@ class DatabaseManager:
                 'featured_by_name': row[3]
             }
             for row in results
-        ]
+        ] 
     
     def get_user_featured_records(self, user_id: int, guild_id: int, page: int = 1, per_page: int = 5) -> Tuple[List[Dict], int]:
         """获取用户在指定群组被精選的记录（分页）"""
@@ -305,6 +383,40 @@ class DatabaseManager:
             }
             for row in results
         ]
+    
+    def get_total_ranking(self, guild_id: int, page: int = 1, per_page: int = 20) -> Tuple[List[Dict], int]:
+        """获取指定群组的总积分排行榜（分页）"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        
+        # 获取总记录数
+        cursor.execute('SELECT COUNT(*) FROM user_points WHERE guild_id = ?', (guild_id,))
+        total_records = cursor.fetchone()[0]
+        
+        # 计算总页数
+        total_pages = (total_records + per_page - 1) // per_page
+        
+        # 获取当前页数据
+        offset = (page - 1) * per_page
+        cursor.execute('''
+            SELECT user_id, username, points
+            FROM user_points 
+            WHERE guild_id = ?
+            ORDER BY points DESC
+            LIMIT ? OFFSET ?
+        ''', (guild_id, per_page, offset))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return [
+            {
+                'user_id': row[0],
+                'username': row[1],
+                'points': row[2]
+            }
+            for row in results
+        ], total_pages
     
     def get_user_monthly_points(self, user_id: int, guild_id: int) -> int:
         """获取用户在指定群组的月度积分"""

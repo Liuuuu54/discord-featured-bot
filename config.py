@@ -10,7 +10,7 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 
 # 檢查 Token 是否存在
 if not DISCORD_TOKEN:
-    raise ValueError("❌ DISCORD_TOKEN 環境變量未設置！請在 Railway 項目設置中添加 DISCORD_TOKEN 環境變量。")
+    raise ValueError("❌ DISCORD_TOKEN 環境變量未設置！請設置 DISCORD_TOKEN 環境變量。")
 
 # 数据库文件路径
 DATABASE_FILE = 'featured_messages.db'

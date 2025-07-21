@@ -5,9 +5,11 @@
 ## 功能特点
 
 - 🌟 **留言精選**: 楼主可以将优质留言设为精選
+- ❌ **精選取消**: 楼主可以取消错误精選并修正积分
 - 🏆 **积分系统**: 被精選用户自动获得积分奖励
 - 📊 **月度积分**: 每月积分独立计算，自动重置
 - 🏅 **排行榜**: 显示月度积分排行榜
+- 🏆 **总排行榜**: 管理组可查看所有用户总积分排名
 - 📈 **统计功能**: 查看用户积分和精選统计
 - 🛡️ **权限控制**: 只有楼主可以精選留言
 - 🔄 **跨帖重复**: 不同帖子中可以重复精選同一用户
@@ -22,81 +24,51 @@
 5. **积分奖励**: 每次精選获得1积分
 6. **月度重置**: 每月1日积分自动重置
 
-## 安装步骤
+## 🚀 快速開始
 
-### 1. 克隆项目
+### 1. 克隆項目
 ```bash
 git clone <repository-url>
 cd dc_bot
 ```
 
-### 2. 安装依赖
+### 2. 安裝依賴
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. 配置环境变量
-
-#### 本地开发环境
-1. 复制 `env_example.txt` 为 `.env`
-2. 在 `.env` 文件中设置您的 Discord Bot Token:
+### 3. 配置環境變量
+複製 `env_example.txt` 為 `.env` 並設置您的 Discord Bot Token:
 ```
 DISCORD_TOKEN=your_actual_bot_token_here
 ```
-#### Railway 部署环境
-在 Railway 项目设置中添加环境变量：
-1. 变量名: `DISCORD_TOKEN`
-2. 变量值: 您的 Discord Bot Token
 
-### 4. 创建 Discord 机器人
-1. 访问 [Discord Developer Portal](https://discord.com/developers/applications)
-2. 创建新应用
-3. 在 "Bot" 部分创建机器人
-4. 复制 Token 并粘贴到 `.env` 文件中
-5. 启用以下权限:
+### 4. 創建 Discord 機器人
+1. 訪問 [Discord Developer Portal](https://discord.com/developers/applications)
+2. 創建新應用並在 "Bot" 部分創建機器人
+3. 複製 Token 並設置到環境變量中
+4. 啟用以下權限:
    - Send Messages
    - Use Slash Commands
    - Read Message History
    - Embed Links
    - Mention Everyone
 
-### 5. 邀请机器人到服务器
-使用以下链接邀请机器人（替换 YOUR_BOT_CLIENT_ID）:
+### 5. 邀請機器人到服務器
+使用以下鏈接邀請機器人（替換 YOUR_BOT_CLIENT_ID）:
 ```
 https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_CLIENT_ID&permissions=2048&scope=bot%20applications.commands
 ```
 
-### 6. 运行机器人
-
-#### 本地运行
+### 6. 運行機器人
 ```bash
 python bot.py
 ```
 
-#### Railway 部署
-
-1. **连接 GitHub 仓库**
-   - 在 Railway 中创建新项目
-   - 选择 "Deploy from GitHub repo"
-   - 连接您的 GitHub 仓库
-
-2. **配置环境变量**
-   - 在 Railway 项目设置中点击 "Variables" 标签
-   - 添加环境变量:
-     - 变量名: `DISCORD_TOKEN`
-     - 变量值: 您的 Discord Bot Token
-   - 点击 "Add" 保存
-   - 重新部署项目
-
-3. **设置启动命令**
-   - 在 Railway 项目设置中设置启动命令:
-   ```bash
-   python bot.py
-   ```
-
-4. **自动部署**
-   - Railway 会自动检测代码变更并重新部署
-   - 每次推送到 GitHub 主分支都会触发自动部署
+### 📦 部署選項
+- **本地開發**: 直接運行 `python bot.py`
+- **VPS 部署**: 參考 [VPS_DEPLOYMENT.md](VPS_DEPLOYMENT.md)
+- **雲端部署**: 支持 Railway、Heroku 等平台
 
 ## 命令说明
 
@@ -111,14 +83,29 @@ python bot.py
   - 自动@提及被精選用户
   - 显示精選原因
 
+### ❌ /精選取消
+取消指定留言的精選狀態
+- **参数**: 
+  - `message_id`: 要取消精選的留言ID
+- **权限**: 仅楼主可用
+- **效果**: 
+  - 移除精選记录
+  - 被精選用户积分减少1分
+  - 同时减少总积分和月度积分
+  - 支持错误精選的修正
+
 ### 📊 /积分
-查看用户积分和精選统计（仅对用户本人可见）
+查看用户积分和精選统计（支持查看其他用户）
+- **参数**: 
+  - `user` (可选): 要查看的用户，不填则查看自己
 - **显示**: 
   - 当前总积分
   - 被精選次数
   - 精選他人次数
   - 分页显示精選记录（每页5条）
   - 包含原帖链接、精選者、时间等信息
+- **权限**: 
+  - 所有积分查看都仅自己可见
 
 ### 🏅 /排行榜
 显示月度积分排行榜（仅对用户本人可见）
@@ -127,6 +114,16 @@ python bot.py
   - 月度积分排名
   - 积分数量
 - **更新**: 实时更新
+
+### 🏆 /總排行
+显示总积分排行榜（仅管理组可用）
+- **权限**: 需要管理员权限
+- **显示**: 
+  - 所有用户的积分排名（不会重置）
+  - 每页显示20个用户
+  - 支持分页浏览
+  - 积分数量
+- **特点**: 仅管理组可见，用于管理监控
 
 ### 📈 /帖子统计
 查看当前帖子的精選统计（仅对用户本人可见）
@@ -168,27 +165,28 @@ python bot.py
 
 ```
 dc_bot/
-├── bot.py              # 主机器人文件
-├── config.py           # 配置文件
-├── database.py         # 数据库管理
-├── db_checker.py       # 数据库检查工具（支持简单/详细模式）
-├── requirements.txt    # 依赖包
-├── env_example.txt     # 环境变量示例
-├── railway.json        # Railway 部署配置
-├── README.md          # 说明文档
-└── featured_messages.db # 数据库文件（自动生成）
+├── bot.py                    # 主机器人文件
+├── config.py                 # 配置文件
+├── database.py               # 数据库管理
+├── db_checker.py             # 数据库检查工具
+├── requirements.txt          # 依赖包
+├── env_example.txt           # 环境变量示例
+├── README.md                 # 说明文档
+├── Dockerfile                # Docker 配置
+├── docker-compose.yml        # Docker Compose 配置
+├── deploy.sh                 # 部署脚本
+├── backup.sh                 # 备份脚本
+└── featured_messages.db      # 数据库文件（自动生成）
 ```
 
 ## 工具说明
 
 ### 数据库检查工具
-
-#### 本地使用
 ```bash
 # 详细检查（默认）
 python db_checker.py
 
-# 简单检查（适合 Railway 环境）
+# 简单检查
 python db_checker.py --simple
 
 # 交互式查询
@@ -201,36 +199,12 @@ python db_checker.py --guild 123456789
 python db_checker.py --help
 ```
 
-#### Railway 环境使用
-
-**方法 1: Railway CLI（推荐）**
-```bash
-# 安装 Railway CLI
-npm install -g @railway/cli
-
-# 登录并连接项目
-railway login
-railway link
-
-# 运行检查工具
-railway run python db_checker.py --simple
-railway run python db_checker.py --interactive
-railway run python db_checker.py --guild 123456789
-```
-
-**方法 2: Railway Web 界面**
-1. 在 Railway 项目页面点击 "Deployments"
-2. 选择最新部署，点击 "Logs"
-3. 在 "Settings" 中临时修改启动命令为 `python db_checker.py --simple`
-4. 查看日志输出
-
 ## 故障排除
 
 ### 常见问题
 
 1. **机器人无法启动**
-   - **本地环境**: 检查 `.env` 文件中的 Token 是否正确
-   - **Railway 环境**: 确认在 Railway 项目设置中已添加 `DISCORD_TOKEN` 环境变量
+   - 检查环境变量中的 Token 是否正确
    - 确认机器人已正确邀请到服务器
    - 检查数据库文件权限
 
@@ -258,6 +232,11 @@ railway run python db_checker.py --guild 123456789
 - 数据库操作记录
 
 ## 更新日志
+
+### v1.0.1
+- ✨ 新增 `/精選取消` 命令：楼主可取消错误精選并修正积分
+- ✨ 新增 `/總排行` 命令：管理组可查看所有用户总积分排行榜
+- 🔧 优化 `/积分` 命令：支持查看其他用户积分
 
 ### v1.0.0
 - 🌟 基础精選功能

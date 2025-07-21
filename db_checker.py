@@ -306,7 +306,7 @@ def print_usage():
     print("  python db_checker.py --interactive      # 互動模式")
     print("  python db_checker.py --guild [群組ID]   # 檢查特定群組")
     print("\n參數說明:")
-    print("  --simple      : 簡單模式，適合 Railway 環境")
+    print("  --simple      : 簡單模式，適合雲端環境")
     print("  --interactive : 互動模式，可輸入自定義 SQL")
     print("  --guild       : 檢查特定群組的數據")
 

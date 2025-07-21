@@ -23,7 +23,7 @@ class FeaturedMessageBot(commands.Bot):
         )
         
         self.db = DatabaseManager(config.DATABASE_FILE)
-    
+        
     async def setup_hook(self):
         """机器人启动时的设置"""
         await self.add_cog(FeaturedCommands(self))
@@ -52,6 +52,99 @@ class FeaturedRecordsView(discord.ui.View):
         self.guild_id = guild_id
         self.current_page = current_page
         self.per_page = 5
+
+class TotalRankingView(discord.ui.View):
+    """總排行榜分頁視圖"""
+    def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1):
+        super().__init__(timeout=300)  # 5分鐘超時
+        self.bot = bot
+        self.guild_id = guild_id
+        self.current_page = current_page
+        self.per_page = 20
+    
+    async def get_ranking_embed(self) -> discord.Embed:
+        """獲取當前頁面的排行榜嵌入訊息"""
+        # 獲取排行榜數據
+        ranking_data, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page)
+        
+        if not ranking_data:
+            embed = discord.Embed(
+                title="🏆 總積分排行榜",
+                description="還沒有積分記錄",
+                color=0x00ff00,
+                timestamp=discord.utils.utcnow()
+            )
+            return embed
+        
+        # 計算當前頁的起始排名
+        start_rank = (self.current_page - 1) * self.per_page + 1
+        
+        embed = discord.Embed(
+            title="🏆 總積分排行榜",
+            description=f"所有時間的積分統計 • 第 {self.current_page} 頁，共 {total_pages} 頁",
+            color=0x00ff00,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        for i, rank_info in enumerate(ranking_data):
+            # 獲取用戶資訊
+            user = self.bot.get_user(rank_info['user_id'])
+            username = user.display_name if user else rank_info['username']
+            
+            # 計算實際排名
+            actual_rank = start_rank + i
+            
+            embed.add_field(
+                name=f"{actual_rank}. {username}",
+                value=f"積分: {rank_info['points']} 分",
+                inline=False
+            )
+        
+        # 更新按鈕狀態
+        self.update_buttons(total_pages)
+        
+        return embed
+    
+    def update_buttons(self, total_pages: int):
+        """更新按鈕狀態"""
+        # 第一頁按鈕
+        self.children[0].disabled = self.current_page <= 1
+        # 上一頁按鈕
+        self.children[1].disabled = self.current_page <= 1
+        # 下一頁按鈕
+        self.children[2].disabled = self.current_page >= total_pages
+        # 最後一頁按鈕
+        self.children[3].disabled = self.current_page >= total_pages
+    
+    @discord.ui.button(label="第一頁", style=discord.ButtonStyle.gray, emoji="⏮️")
+    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = 1
+        embed = await self.get_ranking_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="上一頁", style=discord.ButtonStyle.primary, emoji="◀️")
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 1:
+            self.current_page -= 1
+            embed = await self.get_ranking_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        _, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page)
+        
+        if self.current_page < total_pages:
+            self.current_page += 1
+            embed = await self.get_ranking_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
+    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        _, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page)
+        
+        self.current_page = total_pages
+        embed = await self.get_ranking_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
 class ThreadStatsView(discord.ui.View):
     """帖子統計分頁視圖"""
@@ -267,20 +360,12 @@ class ThreadStatsView(discord.ui.View):
     
     @discord.ui.button(label="第一頁", style=discord.ButtonStyle.gray, emoji="⏮️")
     async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 只有記錄擁有者才能操作分頁！", ephemeral=True)
-            return
-        
         self.current_page = 1
         embed = await self.get_records_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="上一頁", style=discord.ButtonStyle.primary, emoji="◀️")
     async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 只有記錄擁有者才能操作分頁！", ephemeral=True)
-            return
-        
         if self.current_page > 1:
             self.current_page -= 1
             embed = await self.get_records_embed()
@@ -288,10 +373,6 @@ class ThreadStatsView(discord.ui.View):
     
     @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 只有記錄擁有者才能操作分頁！", ephemeral=True)
-            return
-        
         records, total_pages = self.bot.db.get_user_featured_records(
             self.user_id, self.guild_id, self.current_page, self.per_page
         )
@@ -303,10 +384,6 @@ class ThreadStatsView(discord.ui.View):
     
     @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
     async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 只有記錄擁有者才能操作分頁！", ephemeral=True)
-            return
-        
         records, total_pages = self.bot.db.get_user_featured_records(
             self.user_id, self.guild_id, self.current_page, self.per_page
         )
@@ -430,12 +507,91 @@ class FeaturedCommands(commands.Cog):
             # 檢查是否已經回應過或 interaction 是否有效
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 精選留言时发生错误，请稍后重试。", ephemeral=True)
+            await interaction.response.send_message("❌ 精選留言时发生错误，请稍后重试。", ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 精選留言时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
                 # 如果連 followup 都失敗，就記錄錯誤但不拋出異常
+    
+    @app_commands.command(name="精選取消", description="取消指定留言的精選狀態（僅樓主可用）")
+    @app_commands.describe(
+        message_id="要取消精選的留言ID"
+    )
+    async def unfeature_message(self, interaction: discord.Interaction, message_id: str):
+        """取消精選留言命令"""
+        try:
+            # 检查是否在帖子中
+            if not interaction.channel.type == discord.ChannelType.public_thread:
+                await interaction.response.send_message("❌ 此命令只能在帖子中使用！", ephemeral=True)
+                return
+            
+            thread_id = interaction.channel.id
+            thread_owner_id = interaction.channel.owner_id
+            
+            # 检查是否为楼主
+            if interaction.user.id != thread_owner_id:
+                await interaction.response.send_message("❌ 只有楼主才能取消精選留言！", ephemeral=True)
+                return
+            
+            # 检查留言ID格式
+            try:
+                message_id_int = int(message_id)
+            except ValueError:
+                await interaction.response.send_message("❌ 留言ID格式錯誤！請輸入正確的數字ID。", ephemeral=True)
+                return
+            
+            # 检查精選记录是否存在
+            featured_info = self.db.get_featured_message_by_id(message_id_int, thread_id)
+            if not featured_info:
+                await interaction.response.send_message("❌ 找不到該留言的精選記錄！請檢查留言ID是否正確。", ephemeral=True)
+                return
+            
+            # 移除精選记录
+            success = self.db.remove_featured_message(message_id_int, thread_id)
+            if not success:
+                await interaction.response.send_message("❌ 取消精選失敗，請稍後重試。", ephemeral=True)
+                return
+            
+            # 创建成功消息
+            embed = discord.Embed(
+                title="✅ 精選已取消",
+                description=f"已成功取消 {featured_info['author_name']} 留言的精選狀態",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="被取消精選的用戶",
+                value=featured_info['author_name'],
+                inline=True
+            )
+            
+            embed.add_field(
+                name="取消者",
+                value=interaction.user.display_name,
+                inline=True
+            )
+            
+            embed.add_field(
+                name="積分變更",
+                value=f"{featured_info['author_name']} 的積分已減少 1 分",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"留言ID: {message_id}")
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"取消精選留言时发生错误: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 取消精選留言时发生错误，请稍后重试。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 取消精選留言时发生错误，请稍后重试。", ephemeral=True)
+            except Exception as followup_error:
+                logger.error(f"发送错误消息时发生错误: {followup_error}")
     
     @app_commands.command(name="排行榜", description="查看月度積分排行榜")
     async def ranking(self, interaction: discord.Interaction):
@@ -452,11 +608,11 @@ class FeaturedCommands(commands.Cog):
             )
             
             if not ranking_data:
-                embed.add_field(
+            embed.add_field(
                     name="📝 排行榜",
                     value="本月還沒有積分記錄",
                     inline=False
-                )
+            )
             else:
                 for i, rank_info in enumerate(ranking_data, 1):
                     # 獲取用戶資訊
@@ -472,8 +628,8 @@ class FeaturedCommands(commands.Cog):
                         rank_icon = "🥉"
                     else:
                         rank_icon = f"{i}."
-                    
-                    embed.add_field(
+            
+            embed.add_field(
                         name=f"{rank_icon} {username}",
                         value=f"積分: {rank_info['points']} 分",
                         inline=False
@@ -493,11 +649,42 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
     
-    @app_commands.command(name="积分", description="查看自己的积分和精選记录（仅自己可见）")
-    async def check_points(self, interaction: discord.Interaction):
-        """查看积分命令（隱藏回應）"""
+    @app_commands.command(name="總排行", description="查看總積分排行榜（僅管理組可用）")
+    async def total_ranking(self, interaction: discord.Interaction):
+        """查看總積分排行榜命令（僅管理組可用）"""
         try:
-            user_id = interaction.user.id
+            # 檢查是否為管理組
+            if not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message("❌ 此命令僅限管理組使用！", ephemeral=True)
+                return
+            
+            # 創建分頁視圖
+            view = TotalRankingView(self.bot, interaction.guild_id, 1)
+            
+            # 獲取嵌入訊息
+            embed = await view.get_ranking_embed()
+            
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"查看總排行榜时发生错误: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 查看總排行榜时发生错误，请稍后重试。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 查看總排行榜时发生错误，请稍后重试。", ephemeral=True)
+            except Exception as followup_error:
+                logger.error(f"发送错误消息时发生错误: {followup_error}")
+    
+    @app_commands.command(name="积分", description="查看用户积分和精選记录（支持查看其他用户）")
+    async def check_points(self, interaction: discord.Interaction, user: discord.Member = None):
+        """查看积分命令（支持查看其他用户）"""
+        try:
+            # 如果沒有指定用戶，默認查看自己
+            if user is None:
+                user = interaction.user
+            
+            user_id = user.id
             stats = self.db.get_user_stats(user_id, interaction.guild_id)
             
             # 創建分頁視圖
@@ -519,16 +706,16 @@ class FeaturedCommands(commands.Cog):
                 inline=False
             )
             
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_thumbnail(url=user.display_avatar.url)
             
-            # 使用 ephemeral=True 讓回應只有使用者自己可見
+            # 所有積分查看都使用 ephemeral=True，避免聊天頻道被塞爆
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             logger.error(f"查看积分时发生错误: {e}")
             # 檢查是否已經回應過
             if not interaction.response.is_done():
-                await interaction.response.send_message("❌ 查看积分时发生错误，请稍后重试。", ephemeral=True)
+            await interaction.response.send_message("❌ 查看积分时发生错误，请稍后重试。", ephemeral=True)
             else:
                 # 如果已經回應過，使用 followup
                 await interaction.followup.send("❌ 查看积分时发生错误，请稍后重试。", ephemeral=True)
@@ -558,7 +745,7 @@ class FeaturedCommands(commands.Cog):
             # 檢查是否已經回應過
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 查看帖子统计时发生错误，请稍后重试。", ephemeral=True)
+            await interaction.response.send_message("❌ 查看帖子统计时发生错误，请稍后重试。", ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 查看帖子统计时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
@@ -574,14 +761,16 @@ async def main():
     try:
         await bot.start(config.DISCORD_TOKEN)
     except KeyboardInterrupt:
-        logger.info("机器人正在关闭...")
+        logger.info("🛑 收到停止信號，正在關閉機器人...")
     except Exception as e:
-        logger.error(f"启动机器人时发生错误: {e}")
+        logger.error(f"❌ 機器人運行時發生錯誤: {e}")
+    finally:
+        await bot.close()
 
 def start_bot():
     """啟動 Discord Bot"""
     import asyncio
-    asyncio.run(main())
+    asyncio.run(main()) 
 
 if __name__ == "__main__":
     start_bot() 

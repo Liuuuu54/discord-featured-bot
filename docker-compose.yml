@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  dc-bot:
+    build: .
+    container_name: dc-bot
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - BOT_NAME=${BOT_NAME:-留言精選機器人}
+      - DATABASE_PATH=/app/data/bot_database.db
+    volumes:
+      # 持久化數據庫文件
+      - ./data:/app/data
+      # 持久化日誌
+      - ./logs:/app/logs
+    networks:
+      - bot-network
+
+  # 可選：添加 Redis 用於緩存（如果需要）
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: dc-bot-redis
+  #   restart: unless-stopped
+  #   volumes:
+  #     - redis-data:/data
+  #   networks:
+  #     - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
+# volumes:
+#   redis-data:
