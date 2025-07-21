@@ -65,11 +65,6 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_CLIENT_ID&permission
 python bot.py
 ```
 
-### 📦 部署選項
-- **本地開發**: 直接運行 `python bot.py`
-- **VPS 部署**: 參考 [VPS_DEPLOYMENT.md](VPS_DEPLOYMENT.md)
-- **雲端部署**: 支持 Railway、Heroku 等平台
-
 ## 命令说明
 
 ### 🌟 /精選
@@ -174,8 +169,8 @@ dc_bot/
 ├── README.md                 # 说明文档
 ├── Dockerfile                # Docker 配置
 ├── docker-compose.yml        # Docker Compose 配置
-├── deploy.sh                 # 部署脚本
-├── backup.sh                 # 备份脚本
+├── deploy.sh                 # Docker 部署脚本
+├── backup.sh                 # Docker 备份脚本
 └── featured_messages.db      # 数据库文件（自动生成）
 ```
 
