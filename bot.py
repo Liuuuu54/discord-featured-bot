@@ -93,11 +93,28 @@ class FeaturedRecordsView(discord.ui.View):
             featured_at = datetime.fromisoformat(record['featured_at'].replace('Z', '+00:00'))
             formatted_time = featured_at.strftime('%Y-%m-%d %H:%M')
             
+            # 創建帖子超連結
+            thread_link = f"https://discord.com/channels/{self.guild_id}/{record['thread_id']}"
+            
+            # 嘗試獲取帖子標題
+            thread_title = None
+            try:
+                channel = self.bot.get_channel(record['thread_id'])
+                if channel and hasattr(channel, 'name'):
+                    thread_title = channel.name
+            except:
+                pass
+            
             # 創建記錄描述
             description = f"📝 **精選原因**: {record['reason'] or '無'}\n"
             description += f"👤 **精選者**: {record['featured_by_name']}\n"
             description += f"📅 **精選時間**: {formatted_time}\n"
-            description += f"🏷️ **帖子ID**: {record['thread_id']}"
+            
+            # 使用帖子超連結
+            if thread_title:
+                description += f"🏷️ **原帖**: [{thread_title}]({thread_link})"
+            else:
+                description += f"🏷️ **原帖**: [點擊查看]({thread_link})"
             
             embed.add_field(
                 name=f"{i}. 精選記錄",
@@ -286,6 +303,9 @@ class ThreadStatsView(discord.ui.View):
             timestamp=discord.utils.utcnow()
         )
         
+        # 記錄開始時間
+        start_time = datetime.now()
+        
         for i, stat in enumerate(current_stats, start_idx + 1):
             # 格式化時間
             try:
@@ -297,9 +317,16 @@ class ThreadStatsView(discord.ui.View):
             # 創建留言連結
             message_link = f"https://discord.com/channels/{self.guild_id}/{self.thread_id}/{stat['message_id']}"
             
+            # 實時獲取表情符號統計
+            reaction_count = await self.get_message_reaction_count(stat['message_id'])
+            
             # 構建記錄內容
             record_content = f"**精選留言**: [點擊查看]({message_link})\n"
             record_content += f"**時間**: {formatted_time}"
+            
+            # 添加表情符號統計
+            if reaction_count > 0:
+                record_content += f"\n**👍 最高表情數**: {reaction_count}"
             
             # 如果有精選原因，添加到內容中
             if stat.get('reason'):
@@ -310,6 +337,10 @@ class ThreadStatsView(discord.ui.View):
                 value=record_content,
                 inline=False
             )
+        
+        # 計算並記錄處理時間
+        processing_time = (datetime.now() - start_time).total_seconds()
+        logger.info(f"📊 帖子統計處理完成 - 頁面 {self.current_page}, 處理 {len(current_stats)} 條記錄, 耗時 {processing_time:.2f}秒")
         
         # 更新按鈕狀態
         self.update_buttons(total_pages)
@@ -433,6 +464,41 @@ class ThreadStatsView(discord.ui.View):
         self.update_buttons(total_pages)
         
         return embed
+    
+    async def get_message_reaction_count(self, message_id: int) -> int:
+        """獲取消息的最高表情符號數量（帶緩存）"""
+        # 簡單的內存緩存，避免短時間內重複請求
+        cache_key = f"{self.thread_id}_{message_id}"
+        if hasattr(self, '_reaction_cache') and cache_key in self._reaction_cache:
+            cache_time, count = self._reaction_cache[cache_key]
+            # 緩存5秒
+            if (datetime.now() - cache_time).total_seconds() < 5:
+                return count
+        
+        try:
+            # 獲取消息對象
+            message = await self.bot.get_channel(self.thread_id).fetch_message(message_id)
+            
+            if not message or not message.reactions:
+                return 0
+            
+            # 計算所有表情符號中的最高數量
+            max_count = 0
+            for reaction in message.reactions:
+                if reaction.count > max_count:
+                    max_count = reaction.count
+            
+            # 緩存結果
+            if not hasattr(self, '_reaction_cache'):
+                self._reaction_cache = {}
+            self._reaction_cache[cache_key] = (datetime.now(), max_count)
+            
+            return max_count
+            
+        except Exception as e:
+            # 如果無法獲取消息或表情符號，返回 0
+            logger.debug(f"無法獲取消息 {message_id} 的表情符號: {e}")
+            return 0
     
     async def get_thread_title(self, thread_id: int) -> str:
         """獲取帖子標題"""

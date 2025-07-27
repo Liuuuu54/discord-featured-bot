@@ -15,13 +15,6 @@ if [ -z "$DISCORD_TOKEN" ]; then
     exit 1
 fi
 
-# 創建必要的目錄
-echo "📁 創建目錄..."
-mkdir -p data logs
-
-# 設置目錄權限
-chmod 755 data logs
-
 # 停止現有容器（如果存在）
 echo "🛑 停止現有容器..."
 docker-compose down || true
