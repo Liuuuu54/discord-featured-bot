@@ -11,6 +11,16 @@ import os
 import sys
 from datetime import datetime
 
+# 导入配置文件
+try:
+    import config
+    db_file = config.DATABASE_FILE
+except ImportError:
+    # 如果无法导入config，使用默认路径
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+    os.makedirs(data_dir, exist_ok=True)
+    db_file = os.path.join(data_dir, 'featured_messages.db')
+
 def print_separator(title):
     """打印分隔線"""
     print("\n" + "="*50)
@@ -19,8 +29,6 @@ def print_separator(title):
 
 def check_database(simple_mode=False):
     """檢查資料庫內容"""
-    db_file = "featured_messages.db"
-    
     if not os.path.exists(db_file):
         print(f"❌ 資料庫文件 {db_file} 不存在！")
         return
@@ -180,7 +188,7 @@ def interactive_mode():
     print("輸入 'q' 退出，輸入 'help' 查看幫助")
     
     try:
-        conn = sqlite3.connect("featured_messages.db")
+        conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
         
         print("✅ 數據庫支持多群組")
@@ -233,7 +241,7 @@ def check_guild_data(guild_id=None):
     print_separator(f"🏠 群組數據檢查")
     
     try:
-        conn = sqlite3.connect("featured_messages.db")
+        conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
         
         if guild_id is None:

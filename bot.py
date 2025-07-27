@@ -7,7 +7,14 @@ import logging
 from datetime import datetime
 
 # 设置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(config.LOG_FILE, encoding='utf-8'),
+        logging.StreamHandler()  # 同时输出到控制台
+    ]
+)
 logger = logging.getLogger('discord')
 
 class FeaturedMessageBot(commands.Bot):
@@ -404,6 +411,9 @@ class FeaturedCommands(commands.Cog):
     )
     async def feature_message(self, interaction: discord.Interaction, message_id: str, reason: str = None):
         """精選留言命令"""
+        # 记录命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精選 命令，留言ID: {message_id}")
+        
         try:
             # 检查是否在帖子中
             if not interaction.channel.type == discord.ChannelType.public_thread:
@@ -520,6 +530,9 @@ class FeaturedCommands(commands.Cog):
     )
     async def unfeature_message(self, interaction: discord.Interaction, message_id: str):
         """取消精選留言命令"""
+        # 记录命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精選取消 命令，留言ID: {message_id}")
+        
         try:
             # 检查是否在帖子中
             if not interaction.channel.type == discord.ChannelType.public_thread:
@@ -596,6 +609,9 @@ class FeaturedCommands(commands.Cog):
     @app_commands.command(name="排行榜", description="查看月度積分排行榜")
     async def ranking(self, interaction: discord.Interaction):
         """查看月度積分排行榜"""
+        # 记录命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了月度排行榜")
+        
         try:
             ranking_data = self.db.get_monthly_ranking(interaction.guild_id, 10)
             current_month = self.db.get_current_month()
@@ -652,6 +668,9 @@ class FeaturedCommands(commands.Cog):
     @app_commands.command(name="總排行", description="查看總積分排行榜（僅管理組可用）")
     async def total_ranking(self, interaction: discord.Interaction):
         """查看總積分排行榜命令（僅管理組可用）"""
+        # 记录命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了總排行榜")
+        
         try:
             # 檢查是否為管理組（檢查特定角色或權限）
             has_admin_role = False
@@ -693,6 +712,10 @@ class FeaturedCommands(commands.Cog):
     @app_commands.command(name="积分", description="查看用户积分和精選记录（支持查看其他用户）")
     async def check_points(self, interaction: discord.Interaction, user: discord.Member = None):
         """查看积分命令（支持查看其他用户）"""
+        # 记录命令使用
+        target_user = user.name if user else interaction.user.name
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了用户 {target_user} 的积分")
+        
         try:
             # 如果沒有指定用戶，默認查看自己
             if user is None:
@@ -737,6 +760,9 @@ class FeaturedCommands(commands.Cog):
     @app_commands.command(name="帖子统计", description="查看当前帖子的精選统计（仅自己可见）")
     async def thread_stats(self, interaction: discord.Interaction):
         """查看帖子统计命令（隱藏回應）"""
+        # 记录命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了帖子统计")
+        
         try:
             # 检查是否在帖子中
             if not interaction.channel.type == discord.ChannelType.public_thread:

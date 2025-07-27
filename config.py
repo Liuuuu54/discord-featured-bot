@@ -12,8 +12,19 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
     raise ValueError("❌ DISCORD_TOKEN 環境變量未設置！請設置 DISCORD_TOKEN 環境變量。")
 
+# 创建数据目录
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# 创建日志目录
+LOGS_DIR = os.path.join(DATA_DIR, 'logs')
+os.makedirs(LOGS_DIR, exist_ok=True)
+
 # 数据库文件路径
-DATABASE_FILE = 'featured_messages.db'
+DATABASE_FILE = os.path.join(DATA_DIR, 'featured_messages.db')
+
+# 日志文件路径
+LOG_FILE = os.path.join(LOGS_DIR, 'bot.log')
 
 # 机器人配置
 BOT_PREFIX = '!'
