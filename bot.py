@@ -582,11 +582,11 @@ class FeaturedCommands(commands.Cog):
             bot_message_id = None
             try:
                 # 获取频道的最新消息
-                async for message in interaction.channel.history(limit=10):
-                    if message.author.id == self.bot.user.id and message.embeds:
+                async for bot_msg in interaction.channel.history(limit=10):
+                    if bot_msg.author.id == self.bot.user.id and bot_msg.embeds:
                         # 检查是否是精選消息（通过检查embed标题）
-                        if message.embeds[0].title == "🌟 留言精選":
-                            bot_message_id = message.id
+                        if bot_msg.embeds[0].title == "🌟 留言精選":
+                            bot_message_id = bot_msg.id
                             break
             except Exception as e:
                 logger.warning(f"⚠️ 无法获取机器人消息ID: {e}")
@@ -609,6 +609,7 @@ class FeaturedCommands(commands.Cog):
                 return
             
             # 给用户添加积分（總積分）
+            logger.info(f"🎯 给用户 {message.author.display_name} (ID: {message.author.id}) 添加 {config.POINTS_PER_FEATURE} 积分")
             new_points = self.db.add_user_points(
                 user_id=message.author.id,
                 username=message.author.display_name,
@@ -623,6 +624,8 @@ class FeaturedCommands(commands.Cog):
                 points=config.POINTS_PER_FEATURE,
                 guild_id=interaction.guild_id
             )
+            
+            logger.info(f"✅ 用户 {message.author.display_name} 积分更新完成 - 總積分: {new_points}, 月度積分: {new_monthly_points}")
             
         except Exception as e:
             logger.error(f"精選留言时发生错误: {e}")

@@ -261,7 +261,7 @@ class DatabaseManager:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT author_id, author_name, featured_at, featured_by_name
+            SELECT author_id, author_name, featured_at, featured_by_name, message_id
             FROM featured_messages 
             WHERE thread_id = ?
             ORDER BY featured_at DESC
@@ -275,7 +275,8 @@ class DatabaseManager:
                 'author_id': row[0],
                 'author_name': row[1],
                 'featured_at': row[2],
-                'featured_by_name': row[3]
+                'featured_by_name': row[3],
+                'message_id': row[4]
             }
             for row in results
         ] 
