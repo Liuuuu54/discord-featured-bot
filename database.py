@@ -54,6 +54,7 @@ class DatabaseManager:
                 featured_by_name TEXT NOT NULL,
                 featured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 reason TEXT,
+                bot_message_id INTEGER,
                 UNIQUE(thread_id, author_id)
             )
         ''')
@@ -127,7 +128,7 @@ class DatabaseManager:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT guild_id, author_id, author_name, featured_by_id, featured_by_name, featured_at
+            SELECT guild_id, author_id, author_name, featured_by_id, featured_by_name, featured_at, bot_message_id
             FROM featured_messages 
             WHERE message_id = ? AND thread_id = ?
         ''', (message_id, thread_id))
@@ -142,7 +143,8 @@ class DatabaseManager:
                 'author_name': result[2],
                 'featured_by_id': result[3],
                 'featured_by_name': result[4],
-                'featured_at': result[5]
+                'featured_at': result[5],
+                'bot_message_id': result[6]
             }
         return None
     
@@ -201,7 +203,7 @@ class DatabaseManager:
     
     def add_featured_message(self, guild_id: int, thread_id: int, message_id: int, 
                            author_id: int, author_name: str,
-                           featured_by_id: int, featured_by_name: str, reason: str = None) -> bool:
+                           featured_by_id: int, featured_by_name: str, reason: str = None, bot_message_id: int = None) -> bool:
         """添加精選记录"""
         try:
             conn = sqlite3.connect(self.db_file)
@@ -209,9 +211,9 @@ class DatabaseManager:
             
             cursor.execute('''
                 INSERT INTO featured_messages 
-                (guild_id, thread_id, message_id, author_id, author_name, featured_by_id, featured_by_name, reason)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (guild_id, thread_id, message_id, author_id, author_name, featured_by_id, featured_by_name, reason))
+                (guild_id, thread_id, message_id, author_id, author_name, featured_by_id, featured_by_name, reason, bot_message_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (guild_id, thread_id, message_id, author_id, author_name, featured_by_id, featured_by_name, reason, bot_message_id))
             
             conn.commit()
             conn.close()

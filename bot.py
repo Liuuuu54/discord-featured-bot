@@ -4,6 +4,7 @@ from discord import app_commands
 import config
 from database import DatabaseManager
 import logging
+import asyncio
 from datetime import datetime
 
 # 设置日志
@@ -59,6 +60,100 @@ class FeaturedRecordsView(discord.ui.View):
         self.guild_id = guild_id
         self.current_page = current_page
         self.per_page = 5
+    
+    async def get_records_embed(self) -> discord.Embed:
+        """獲取當前頁面的精選記錄嵌入訊息"""
+        # 獲取精選記錄數據
+        records, total_pages = self.bot.db.get_user_featured_records(
+            self.user_id, self.guild_id, self.current_page, self.per_page
+        )
+        
+        # 獲取用戶資訊
+        user = self.bot.get_user(self.user_id)
+        username = user.display_name if user else f"用戶 {self.user_id}"
+        
+        if not records:
+            embed = discord.Embed(
+                title=f"🏆 {username} 的精選記錄",
+                description="還沒有精選記錄",
+                color=0x00ff00,
+                timestamp=discord.utils.utcnow()
+            )
+            return embed
+        
+        embed = discord.Embed(
+            title=f"🏆 {username} 的精選記錄",
+            description=f"第 {self.current_page} 頁，共 {total_pages} 頁",
+            color=0x00ff00,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        for i, record in enumerate(records, 1):
+            # 格式化時間
+            featured_at = datetime.fromisoformat(record['featured_at'].replace('Z', '+00:00'))
+            formatted_time = featured_at.strftime('%Y-%m-%d %H:%M')
+            
+            # 創建記錄描述
+            description = f"📝 **精選原因**: {record['reason'] or '無'}\n"
+            description += f"👤 **精選者**: {record['featured_by_name']}\n"
+            description += f"📅 **精選時間**: {formatted_time}\n"
+            description += f"🏷️ **帖子ID**: {record['thread_id']}"
+            
+            embed.add_field(
+                name=f"{i}. 精選記錄",
+                value=description,
+                inline=False
+            )
+        
+        # 更新按鈕狀態
+        self.update_buttons(total_pages)
+        
+        return embed
+    
+    def update_buttons(self, total_pages: int):
+        """更新按鈕狀態"""
+        # 第一頁按鈕
+        self.children[0].disabled = self.current_page <= 1
+        # 上一頁按鈕
+        self.children[1].disabled = self.current_page <= 1
+        # 下一頁按鈕
+        self.children[2].disabled = self.current_page >= total_pages
+        # 最後一頁按鈕
+        self.children[3].disabled = self.current_page >= total_pages
+    
+    @discord.ui.button(label="第一頁", style=discord.ButtonStyle.gray, emoji="⏮️")
+    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = 1
+        embed = await self.get_records_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="上一頁", style=discord.ButtonStyle.primary, emoji="◀️")
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 1:
+            self.current_page -= 1
+            embed = await self.get_records_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        _, total_pages = self.bot.db.get_user_featured_records(
+            self.user_id, self.guild_id, self.current_page, self.per_page
+        )
+        
+        if self.current_page < total_pages:
+            self.current_page += 1
+            embed = await self.get_records_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
+    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        _, total_pages = self.bot.db.get_user_featured_records(
+            self.user_id, self.guild_id, self.current_page, self.per_page
+        )
+        
+        self.current_page = total_pages
+        embed = await self.get_records_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
 class TotalRankingView(discord.ui.View):
     """總排行榜分頁視圖"""
@@ -448,38 +543,6 @@ class FeaturedCommands(commands.Cog):
                 )
                 return
             
-            # 添加精選记录
-            success = self.db.add_featured_message(
-                guild_id=interaction.guild_id,
-                thread_id=thread_id,
-                message_id=message.id,
-                author_id=message.author.id,
-                author_name=message.author.display_name,
-                featured_by_id=interaction.user.id,
-                featured_by_name=interaction.user.display_name,
-                reason=reason
-            )
-            
-            if not success:
-                await interaction.response.send_message("❌ 精選失败，该用户可能已经被精選过了。", ephemeral=True)
-                return
-            
-            # 给用户添加积分（總積分）
-            new_points = self.db.add_user_points(
-                user_id=message.author.id,
-                username=message.author.display_name,
-                points=config.POINTS_PER_FEATURE,
-                guild_id=interaction.guild_id
-            )
-            
-            # 给用户添加月度积分
-            new_monthly_points = self.db.add_monthly_points(
-                user_id=message.author.id,
-                username=message.author.display_name,
-                points=config.POINTS_PER_FEATURE,
-                guild_id=interaction.guild_id
-            )
-            
             # 创建精選通知
             embed = discord.Embed(
                 title="🌟 留言精選",
@@ -511,6 +574,55 @@ class FeaturedCommands(commands.Cog):
             
             # 在訊息內容中 @ 留言者，這樣會真正觸發 Discord 的 @ 通知
             await interaction.response.send_message(content=f"{message.author.mention}", embed=embed)
+            
+            # 等待一下让消息发送完成，然后获取机器人发送的消息ID
+            await asyncio.sleep(0.5)
+            
+            # 获取机器人发送的最新消息ID
+            bot_message_id = None
+            try:
+                # 获取频道的最新消息
+                async for message in interaction.channel.history(limit=10):
+                    if message.author.id == self.bot.user.id and message.embeds:
+                        # 检查是否是精選消息（通过检查embed标题）
+                        if message.embeds[0].title == "🌟 留言精選":
+                            bot_message_id = message.id
+                            break
+            except Exception as e:
+                logger.warning(f"⚠️ 无法获取机器人消息ID: {e}")
+            
+            # 添加精選记录（包含机器人消息ID）
+            success = self.db.add_featured_message(
+                guild_id=interaction.guild_id,
+                thread_id=thread_id,
+                message_id=message.id,
+                author_id=message.author.id,
+                author_name=message.author.display_name,
+                featured_by_id=interaction.user.id,
+                featured_by_name=interaction.user.display_name,
+                reason=reason,
+                bot_message_id=bot_message_id
+            )
+            
+            if not success:
+                await interaction.response.send_message("❌ 精選失败，该用户可能已经被精選过了。", ephemeral=True)
+                return
+            
+            # 给用户添加积分（總積分）
+            new_points = self.db.add_user_points(
+                user_id=message.author.id,
+                username=message.author.display_name,
+                points=config.POINTS_PER_FEATURE,
+                guild_id=interaction.guild_id
+            )
+            
+            # 给用户添加月度积分
+            new_monthly_points = self.db.add_monthly_points(
+                user_id=message.author.id,
+                username=message.author.display_name,
+                points=config.POINTS_PER_FEATURE,
+                guild_id=interaction.guild_id
+            )
             
         except Exception as e:
             logger.error(f"精選留言时发生错误: {e}")
@@ -560,6 +672,21 @@ class FeaturedCommands(commands.Cog):
                 await interaction.response.send_message("❌ 找不到該留言的精選記錄！請檢查留言ID是否正確。", ephemeral=True)
                 return
             
+            # 尝试删除机器人的精選消息
+            bot_message_deleted = False
+            if featured_info.get('bot_message_id'):
+                try:
+                    bot_message = await interaction.channel.fetch_message(featured_info['bot_message_id'])
+                    await bot_message.delete()
+                    bot_message_deleted = True
+                    logger.info(f"🗑️ 已删除机器人精選消息 ID: {featured_info['bot_message_id']}")
+                except discord.NotFound:
+                    logger.warning(f"⚠️ 找不到机器人精選消息 ID: {featured_info['bot_message_id']}")
+                except discord.Forbidden:
+                    logger.warning(f"⚠️ 没有权限删除机器人精選消息 ID: {featured_info['bot_message_id']}")
+                except Exception as e:
+                    logger.error(f"❌ 删除机器人精選消息时发生错误: {e}")
+            
             # 移除精選记录
             success = self.db.remove_featured_message(message_id_int, thread_id)
             if not success:
@@ -591,6 +718,13 @@ class FeaturedCommands(commands.Cog):
                 value=f"{featured_info['author_name']} 的積分已減少 1 分",
                 inline=False
             )
+            
+            if bot_message_deleted:
+                embed.add_field(
+                    name="🗑️ 消息清理",
+                    value="已自动删除精選通知消息",
+                    inline=False
+                )
             
             embed.set_footer(text=f"留言ID: {message_id}")
             
@@ -709,7 +843,7 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
     
-    @app_commands.command(name="积分", description="查看用户积分和精選记录（支持查看其他用户）")
+    @app_commands.command(name="积分", description="查看用户积分和精選记录（如果沒有指定用戶，默認查看自己）")
     async def check_points(self, interaction: discord.Interaction, user: discord.Member = None):
         """查看积分命令（支持查看其他用户）"""
         # 记录命令使用
