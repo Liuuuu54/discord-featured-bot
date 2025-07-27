@@ -507,7 +507,7 @@ class FeaturedCommands(commands.Cog):
             # 檢查是否已經回應過或 interaction 是否有效
             try:
                 if not interaction.response.is_done():
-            await interaction.response.send_message("❌ 精選留言时发生错误，请稍后重试。", ephemeral=True)
+                    await interaction.response.send_message("❌ 精選留言时发生错误，请稍后重试。", ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 精選留言时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
@@ -608,11 +608,11 @@ class FeaturedCommands(commands.Cog):
             )
             
             if not ranking_data:
-            embed.add_field(
+                embed.add_field(
                     name="📝 排行榜",
                     value="本月還沒有積分記錄",
                     inline=False
-            )
+                )
             else:
                 for i, rank_info in enumerate(ranking_data, 1):
                     # 獲取用戶資訊
@@ -628,8 +628,8 @@ class FeaturedCommands(commands.Cog):
                         rank_icon = "🥉"
                     else:
                         rank_icon = f"{i}."
-            
-            embed.add_field(
+                    
+                    embed.add_field(
                         name=f"{rank_icon} {username}",
                         value=f"積分: {rank_info['points']} 分",
                         inline=False
@@ -653,8 +653,22 @@ class FeaturedCommands(commands.Cog):
     async def total_ranking(self, interaction: discord.Interaction):
         """查看總積分排行榜命令（僅管理組可用）"""
         try:
-            # 檢查是否為管理組
-            if not interaction.user.guild_permissions.administrator:
+            # 檢查是否為管理組（檢查特定角色或權限）
+            has_admin_role = False
+            
+            # 方法1: 檢查是否有管理組角色（可配置的角色名稱）
+            admin_role_names = ["管理组", "管理员", "Admin", "Moderator", "管理"]
+            for role in interaction.user.roles:
+                if role.name in admin_role_names:
+                    has_admin_role = True
+                    break
+            
+            # 方法2: 如果沒有特定角色，檢查是否有管理權限
+            if not has_admin_role:
+                has_admin_role = interaction.user.guild_permissions.manage_messages or \
+                                interaction.user.guild_permissions.administrator
+            
+            if not has_admin_role:
                 await interaction.response.send_message("❌ 此命令僅限管理組使用！", ephemeral=True)
                 return
             
@@ -715,7 +729,7 @@ class FeaturedCommands(commands.Cog):
             logger.error(f"查看积分时发生错误: {e}")
             # 檢查是否已經回應過
             if not interaction.response.is_done():
-            await interaction.response.send_message("❌ 查看积分时发生错误，请稍后重试。", ephemeral=True)
+                await interaction.response.send_message("❌ 查看积分时发生错误，请稍后重试。", ephemeral=True)
             else:
                 # 如果已經回應過，使用 followup
                 await interaction.followup.send("❌ 查看积分时发生错误，请稍后重试。", ephemeral=True)
@@ -745,7 +759,7 @@ class FeaturedCommands(commands.Cog):
             # 檢查是否已經回應過
             try:
                 if not interaction.response.is_done():
-            await interaction.response.send_message("❌ 查看帖子统计时发生错误，请稍后重试。", ephemeral=True)
+                    await interaction.response.send_message("❌ 查看帖子统计时发生错误，请稍后重试。", ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 查看帖子统计时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
