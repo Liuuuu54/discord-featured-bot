@@ -48,7 +48,7 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精選, /积分, /帖子统计, /排行榜')
+        logger.info('📋 可用命令: /精選, /积分, /帖子统计, /總排行')
         logger.info('=' * 50)
 
 class FeaturedRecordsView(discord.ui.View):
@@ -808,7 +808,7 @@ class FeaturedCommands(commands.Cog):
                     await interaction.followup.send("❌ 取消精選留言时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
-    
+    '''
     @app_commands.command(name="排行榜", description="查看月度積分排行榜")
     async def ranking(self, interaction: discord.Interaction):
         """查看月度積分排行榜"""
@@ -867,7 +867,7 @@ class FeaturedCommands(commands.Cog):
                     await interaction.followup.send("❌ 查看排行榜时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
-    
+    '''  
     @app_commands.command(name="總排行", description="查看總積分排行榜（僅管理組可用）")
     async def total_ranking(self, interaction: discord.Interaction):
         """查看總積分排行榜命令（僅管理組可用）"""
