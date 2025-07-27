@@ -878,11 +878,11 @@ class FeaturedCommands(commands.Cog):
             # 檢查是否為管理組（檢查特定角色或權限）
             has_admin_role = False
             
-            # 方法1: 檢查是否有管理組角色（可配置的角色名稱）
-            admin_role_names = ["管理组", "管理员", "Admin", "Moderator", "管理"]
+            # 方法1: 檢查是否有管理組角色（從配置文件讀取）
             for role in interaction.user.roles:
-                if role.name in admin_role_names:
+                if role.name in config.ADMIN_ROLE_NAMES:
                     has_admin_role = True
+                    logger.info(f"✅ 用户 {interaction.user.name} 通过角色 '{role.name}' 获得管理权限")
                     break
             
             # 方法2: 如果沒有特定角色，檢查是否有管理權限

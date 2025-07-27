@@ -2,6 +2,11 @@
 DISCORD_TOKEN=your_discord_bot_token_here
 BOT_NAME=留言精選機器人
 
+# 管理组配置（可选）
+# 支持逗号分隔的多个角色名称
+# 如果不设置，将使用默认配置：管理组,管理员,Admin,Moderator,管理,版主
+ADMIN_ROLE_NAMES=管理组,管理员,Admin,Moderator,管理,版主
+
 # 數據庫配置
 DATABASE_PATH=./data/bot_database.db
 

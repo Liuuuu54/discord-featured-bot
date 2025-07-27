@@ -39,8 +39,16 @@ pip install -r requirements.txt
 
 ### 3. 配置環境變量
 複製 `env_example.txt` 為 `.env` 並設置您的 Discord Bot Token:
+
+**基本配置**:
 ```
 DISCORD_TOKEN=your_actual_bot_token_here
+```
+
+**可选配置**:
+```
+# 管理组角色名称（支持逗号分隔多个角色）
+ADMIN_ROLE_NAMES=管理组,管理员,Admin,Moderator,管理,版主
 ```
 
 ### 4. 創建 Discord 機器人
@@ -114,7 +122,8 @@ python bot.py
 ### 🏆 /總排行
 显示总积分排行榜（仅管理组可用）
 - **权限**: 需要管理组角色或管理权限
-  - 支持角色名称：管理組、管理員、Admin、Moderator、管理
+  - 支持角色名称：可通过环境变量 `ADMIN_ROLE_NAMES` 自定义
+  - 默认角色：管理组、管理员、Admin、Moderator、管理、版主
   - 或拥有管理消息权限
   - 或拥有管理员权限
 - **显示**: 
@@ -123,6 +132,7 @@ python bot.py
   - 支持分页浏览
   - 积分数量
 - **特点**: 仅管理组可见，用于管理监控
+- **配置**: 可在 `.env` 文件中自定义管理组角色名称
 
 ### 📈 /帖子统计
 查看当前帖子的精選统计（仅对用户本人可见）
@@ -186,6 +196,7 @@ dc_bot/
 ├── config.py                 # 配置文件
 ├── database.py               # 数据库管理
 ├── db_checker.py             # 数据库检查工具
+├── guild_data_extractor.py   # 群组数据提取工具
 ├── requirements.txt          # 依赖包
 ├── env_example.txt           # 环境变量示例
 ├── README.md                 # 说明文档
@@ -218,6 +229,27 @@ python db_checker.py --guild 123456789
 
 # 查看帮助
 python db_checker.py --help
+```
+
+### 群组数据提取工具
+```bash
+# 列出所有群组
+python guild_data_extractor.py list
+
+# 提取指定群组数据（JSON + CSV）
+python guild_data_extractor.py 123456789
+
+# 只导出JSON格式
+python guild_data_extractor.py 123456789 json
+
+# 只导出CSV格式
+python guild_data_extractor.py 123456789 csv
+
+# 只创建独立数据库
+python guild_data_extractor.py 123456789 db
+
+# 提取所有群组数据
+python guild_data_extractor.py all
 ```
 
 ## 故障排除
@@ -258,6 +290,10 @@ python db_checker.py --help
 
 ## 更新日志
 
+### v1.1.1
+- 🔧 **群组数据提取工具**: 新增 `guild_data_extractor.py`，支持提取指定群组的完整数据，可创建独立数据库文件
+- ⚙️ **管理组配置**: `/總排行` 命令的管理组角色名称现在可通过环境变量自定义配置
+
 ### v1.1.0
 - 🗂️ **数据路径优化**: 数据库和日志文件移至 `data/` 目录，更好的文件组织
 - 🗑️ **精選取消增强**: `/精選取消` 命令现在会自动删除机器人的精選通知消息
@@ -278,7 +314,6 @@ python db_checker.py --help
 - 🏅 排行榜功能
 - 📄 分页显示功能
 - 🔧 数据库检查工具
-- 🐛 交互响应错误修复
 
 ## 贡献
 

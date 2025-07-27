@@ -31,4 +31,24 @@ BOT_PREFIX = '!'
 BOT_NAME = '留言精選'
 
 # 积分系统配置
-POINTS_PER_FEATURE = 1  # 每次精選获得的积分 
+POINTS_PER_FEATURE = 1  # 每次精選获得的积分
+
+# 管理组配置
+ADMIN_ROLE_NAMES = [
+    "管理组", 
+    "管理员", 
+    "Admin", 
+    "Moderator", 
+    "管理",
+    "版主",
+]  # 管理组角色名称列表，可以从环境变量读取
+
+# 从环境变量读取管理组角色名称（可选）
+ADMIN_ROLES_ENV = os.getenv('ADMIN_ROLE_NAMES')
+if ADMIN_ROLES_ENV:
+    try:
+        # 支持逗号分隔的角色名称
+        custom_admin_roles = [role.strip() for role in ADMIN_ROLES_ENV.split(',')]
+        ADMIN_ROLE_NAMES = custom_admin_roles
+    except Exception as e:
+        print(f"⚠️ 解析环境变量 ADMIN_ROLE_NAMES 失败: {e}，使用默认配置") 
