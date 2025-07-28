@@ -30,8 +30,8 @@ start_bot() {
     echo "📝 日志文件: $LOG_FILE"
     echo "=================================="
     
-    # 启动Bot并记录日志
-    python bot.py 2>&1 | tee -a "$LOG_FILE"
+    # 启动Bot（日志已配置在bot.py中）
+    python bot.py
 }
 
 # 函数：处理信号
