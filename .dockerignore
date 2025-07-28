@@ -72,7 +72,6 @@ Dockerfile
 docker-compose.yml
 .dockerignore
 
-# 部署脚本
+# 部署脚本（保留start.sh用于容器启动）
 deploy.sh
-backup.sh
-start.sh 
+backup.sh 
