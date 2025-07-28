@@ -31,7 +31,7 @@ start_bot() {
     echo "=================================="
     
     # 启动Bot并记录日志
-    exec python bot.py 2>&1 | tee -a "$LOG_FILE"
+    python bot.py 2>&1 | tee -a "$LOG_FILE"
 }
 
 # 函数：处理信号
