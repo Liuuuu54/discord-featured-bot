@@ -23,8 +23,8 @@ COPY . .
 # 创建数据目录
 RUN mkdir -p /app/data/logs
 
-# 设置权限
-RUN chmod +x /app/start.sh
+# 设置启动脚本权限
+RUN chmod +x start.sh
 
 # 启动命令
-CMD ["/app/start.sh"] 
+CMD ["./start.sh"] 
