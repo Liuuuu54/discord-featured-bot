@@ -1,10 +1,13 @@
-# Discord Bot 配置
-DISCORD_TOKEN=your_discord_bot_token_here
-BOT_NAME=留言精選機器人
+# Discord Bot 环境变量配置
+# 复制此文件为 .env 并填入实际值
 
-# 管理组配置（可选）
-# 支持逗号分隔的多个角色名称
-# 如果不设置，将使用默认配置：管理组,管理员,Admin,Moderator,管理,版主
+# Discord Bot Token (必需)
+# 从 Discord Developer Portal 获取
+DISCORD_TOKEN=your_discord_bot_token_here
+
+# 管理组角色名称 (可选)
+# 支持逗号分隔多个角色名称
+# 默认值: 管理组,管理员,Admin,Moderator,管理,版主
 ADMIN_ROLE_NAMES=管理组,管理员,Admin,Moderator,管理,版主
 
 # 數據庫配置
