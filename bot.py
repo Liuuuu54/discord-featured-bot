@@ -48,7 +48,7 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精選, /积分, /帖子统计, /總排行')
+        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /月排行')
         logger.info('=' * 50)
 
 class FeaturedRecordsView(discord.ui.View):
@@ -74,15 +74,15 @@ class FeaturedRecordsView(discord.ui.View):
         
         if not records:
             embed = discord.Embed(
-                title=f"🏆 {username} 的精選記錄",
-                description="還沒有精選記錄",
+                        title=f"🏆 {username} 的精选记录",
+        description="还没有精选记录",
                 color=0x00ff00,
                 timestamp=discord.utils.utcnow()
             )
             return embed
         
         embed = discord.Embed(
-            title=f"🏆 {username} 的精選記錄",
+            title=f"🏆 {username} 的精选记录",
             description=f"第 {self.current_page} 頁，共 {total_pages} 頁",
             color=0x00ff00,
             timestamp=discord.utils.utcnow()
@@ -106,9 +106,9 @@ class FeaturedRecordsView(discord.ui.View):
                 pass
             
             # 創建記錄描述
-            description = f"📝 **精選原因**: {record['reason'] or '無'}\n"
-            description += f"👤 **精選者**: {record['featured_by_name']}\n"
-            description += f"📅 **精選時間**: {formatted_time}\n"
+            description = f"📝 **精选原因**: {record['reason'] or '无'}\n"
+            description += f"👤 **精选者**: {record['featured_by_name']}\n"
+            description += f"📅 **精选时间**: {formatted_time}\n"
             
             # 使用帖子超連結
             if thread_title:
@@ -117,7 +117,7 @@ class FeaturedRecordsView(discord.ui.View):
                 description += f"🏷️ **原帖**: [點擊查看]({thread_link})"
             
             embed.add_field(
-                name=f"{i}. 精選記錄",
+                name=f"{i}. 精选记录",
                 value=description,
                 inline=False
             )
@@ -265,6 +265,82 @@ class TotalRankingView(discord.ui.View):
         embed = await self.get_ranking_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
+class MonthlyRankingView(discord.ui.View):
+    """月度排行榜分页视图"""
+    def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1):
+        super().__init__(timeout=300)  # 5分钟超时
+        self.bot = bot
+        self.guild_id = guild_id
+        self.current_page = current_page
+        self.per_page = 20
+
+    async def get_ranking_embed(self) -> discord.Embed:
+        """获取当前页的月度排行榜嵌入消息"""
+        ranking_data, total_pages = self.bot.db.get_monthly_ranking_paginated(self.guild_id, self.current_page, self.per_page)
+        current_month = self.bot.db.get_current_month()
+
+        if not ranking_data:
+            embed = discord.Embed(
+                title=f"🏆 {current_month} 月度积分排行榜",
+                description="本月还没有积分记录",
+                color=0x00ff00,
+                timestamp=discord.utils.utcnow()
+            )
+            return embed
+
+        start_rank = (self.current_page - 1) * self.per_page + 1
+        embed = discord.Embed(
+            title=f"🏆 {current_month} 月度积分排行榜",
+            description=f"本月活跃度排行 • 第 {self.current_page} 页，共 {total_pages} 页",
+            color=0x00ff00,
+            timestamp=discord.utils.utcnow()
+        )
+        for i, rank_info in enumerate(ranking_data):
+            user = self.bot.get_user(rank_info['user_id'])
+            username = user.display_name if user else rank_info['username']
+            actual_rank = start_rank + i
+            embed.add_field(
+                name=f"{actual_rank}. {username}",
+                value=f"积分: {rank_info['points']} 分",
+                inline=False
+            )
+        self.update_buttons(total_pages)
+        return embed
+
+    def update_buttons(self, total_pages: int):
+        self.children[0].disabled = self.current_page <= 1
+        self.children[1].disabled = self.current_page <= 1
+        self.children[2].disabled = self.current_page >= total_pages
+        self.children[3].disabled = self.current_page >= total_pages
+
+    @discord.ui.button(label="第一页", style=discord.ButtonStyle.gray, emoji="⏮️")
+    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = 1
+        embed = await self.get_ranking_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="上一页", style=discord.ButtonStyle.primary, emoji="◀️")
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 1:
+            self.current_page -= 1
+            embed = await self.get_ranking_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="下一页", style=discord.ButtonStyle.primary, emoji="▶️")
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        _, total_pages = self.bot.db.get_monthly_ranking_paginated(self.guild_id, self.current_page, self.per_page)
+        if self.current_page < total_pages:
+            self.current_page += 1
+            embed = await self.get_ranking_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="最后一页", style=discord.ButtonStyle.gray, emoji="⏭️")
+    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        _, total_pages = self.bot.db.get_monthly_ranking_paginated(self.guild_id, self.current_page, self.per_page)
+        self.current_page = total_pages
+        embed = await self.get_ranking_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
 class ThreadStatsView(discord.ui.View):
     """帖子統計分頁視圖"""
     def __init__(self, bot: FeaturedMessageBot, thread_id: int, guild_id: int, current_page: int = 1):
@@ -282,8 +358,8 @@ class ThreadStatsView(discord.ui.View):
         
         if not all_stats:
             embed = discord.Embed(
-                title="📊 帖子精選統計",
-                description="此帖子還沒有精選記錄",
+                        title="📊 帖子精选统计",
+        description="此帖子还没有精选记录",
                 color=discord.Color.light_grey(),
                 timestamp=discord.utils.utcnow()
             )
@@ -297,8 +373,8 @@ class ThreadStatsView(discord.ui.View):
         current_stats = all_stats[start_idx:end_idx]
         
         embed = discord.Embed(
-            title="📊 帖子精選統計",
-            description=f"共 {total_records} 條精選記錄 • 第 {self.current_page} 頁，共 {total_pages} 頁",
+            title="📊 帖子精选统计",
+            description=f"共 {total_records} 条精选记录 • 第 {self.current_page} 页，共 {total_pages} 页",
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow()
         )
@@ -321,16 +397,16 @@ class ThreadStatsView(discord.ui.View):
             reaction_count = await self.get_message_reaction_count(stat['message_id'])
             
             # 構建記錄內容
-            record_content = f"**精選留言**: [點擊查看]({message_link})\n"
+                            record_content = f"**精选留言**: [点击查看]({message_link})\n"
             record_content += f"**時間**: {formatted_time}"
             
             # 添加表情符號統計
             if reaction_count > 0:
                 record_content += f"\n**👍 最高表情數**: {reaction_count}"
             
-            # 如果有精選原因，添加到內容中
+            # 如果有精选原因，添加到内容中
             if stat.get('reason'):
-                record_content += f"\n**精選原因**: {stat['reason']}"
+                record_content += f"\n**精选原因**: {stat['reason']}"
             
             embed.add_field(
                 name=f"{i}. {stat['author_name']}",
@@ -409,7 +485,7 @@ class ThreadStatsView(discord.ui.View):
                 username = f"用戶{self.user_id}"
         
         embed = discord.Embed(
-            title=f"📊 {username} 的精選記錄",
+            title=f"📊 {username} 的精选记录",
             description=f"第 {self.current_page} 頁，共 {total_pages} 頁",
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow()
@@ -446,16 +522,16 @@ class ThreadStatsView(discord.ui.View):
                 else:
                     record_content = f"**原帖**: [點擊查看]({thread_link})\n"
                 
-                record_content += f"**精選留言**: [點擊查看]({message_link})\n"
-                record_content += f"**精選者**: {record['featured_by_name']}\n"
+                record_content += f"**精选留言**: [点击查看]({message_link})\n"
+                record_content += f"**精选者**: {record['featured_by_name']}\n"
                 record_content += f"**時間**: {formatted_time}"
                 
-                # 如果有精選原因，添加到內容中
+                # 如果有精选原因，添加到内容中
                 if record['reason']:
-                    record_content += f"\n**精選原因**: {record['reason']}"
+                    record_content += f"\n**精选原因**: {record['reason']}"
                 
                 embed.add_field(
-                    name=f"{i}. 精選記錄",
+                    name=f"{i}. 精选记录",
                     value=record_content,
                     inline=False
                 )
@@ -565,15 +641,15 @@ class FeaturedCommands(commands.Cog):
         self.bot = bot
         self.db = bot.db
     
-    @app_commands.command(name="精選", description="将指定用户的留言设为精選，该用户获得1积分")
+    @app_commands.command(name="精选", description="将指定用户的留言设为精选，该用户获得1积分")
     @app_commands.describe(
-        message_id="要精選的留言ID",
-        reason="精選原因（可选）"
+        message_id="要精选的留言ID",
+        reason="精选原因（可选）"
     )
     async def feature_message(self, interaction: discord.Interaction, message_id: str, reason: str = None):
         """精選留言命令"""
         # 记录命令使用
-        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精選 命令，留言ID: {message_id}")
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精选 命令，留言ID: {message_id}")
         
         try:
             # 检查是否在帖子中
@@ -586,7 +662,7 @@ class FeaturedCommands(commands.Cog):
             
             # 检查是否为楼主
             if interaction.user.id != thread_owner_id:
-                await interaction.response.send_message("❌ 只有楼主才能精選留言！", ephemeral=True)
+                await interaction.response.send_message("❌ 只有楼主才能精选留言！", ephemeral=True)
                 return
             
             # 获取要精選的留言
@@ -598,40 +674,40 @@ class FeaturedCommands(commands.Cog):
             
             # 检查是否精選自己的留言
             if message.author.id == interaction.user.id:
-                await interaction.response.send_message("❌ 不能精選自己的留言！", ephemeral=True)
+                await interaction.response.send_message("❌ 不能精选自己的留言！", ephemeral=True)
                 return
             
             # 检查是否已经精選过该用户
             if self.db.is_already_featured(thread_id, message.author.id):
                 await interaction.response.send_message(
-                    f"❌ 您已经精選过 {message.author.display_name} 的留言了！每个帖子中只能精選每位用户一次。", 
+                    f"❌ 您已经精选过 {message.author.display_name} 的留言了！每个帖子中只能精选每位用户一次。", 
                     ephemeral=True
                 )
                 return
             
-            # 创建精選通知
+            # 创建精选通知
             embed = discord.Embed(
-                title="🌟 留言精選",
-                description=f"{message.author.display_name} 的留言被设为精選！",
+                title="🌟 留言精选",
+                description=f"{message.author.display_name} 的留言被设为精选！",
                 color=discord.Color.gold(),
                 timestamp=discord.utils.utcnow()
             )
             
             embed.add_field(
-                name="精選的留言",
+                name="精选的留言",
                 value=f"[点击查看]({message.jump_url})",
                 inline=False
             )
             
             embed.add_field(
-                name="精選者",
+                name="精选者",
                 value=interaction.user.display_name,
                 inline=True
             )
             
             if reason:
                 embed.add_field(
-                    name="精選原因",
+                    name="精选原因",
                     value=reason,
                     inline=False
                 )
@@ -650,14 +726,14 @@ class FeaturedCommands(commands.Cog):
                 # 获取频道的最新消息
                 async for bot_msg in interaction.channel.history(limit=10):
                     if bot_msg.author.id == self.bot.user.id and bot_msg.embeds:
-                        # 检查是否是精選消息（通过检查embed标题）
-                        if bot_msg.embeds[0].title == "🌟 留言精選":
+                        # 检查是否是精选消息（通过检查embed标题）
+                        if bot_msg.embeds[0].title == "🌟 留言精选":
                             bot_message_id = bot_msg.id
                             break
             except Exception as e:
                 logger.warning(f"⚠️ 无法获取机器人消息ID: {e}")
             
-            # 添加精選记录（包含机器人消息ID）
+            # 添加精选记录（包含机器人消息ID）
             success = self.db.add_featured_message(
                 guild_id=interaction.guild_id,
                 thread_id=thread_id,
@@ -671,7 +747,7 @@ class FeaturedCommands(commands.Cog):
             )
             
             if not success:
-                await interaction.response.send_message("❌ 精選失败，该用户可能已经被精選过了。", ephemeral=True)
+                await interaction.response.send_message("❌ 精选失败，该用户可能已经被精选过了。", ephemeral=True)
                 return
             
             # 给用户添加积分（總積分）
@@ -694,25 +770,25 @@ class FeaturedCommands(commands.Cog):
             logger.info(f"✅ 用户 {message.author.display_name} 积分更新完成 - 總積分: {new_points}, 月度積分: {new_monthly_points}")
             
         except Exception as e:
-            logger.error(f"精選留言时发生错误: {e}")
+            logger.error(f"精选留言时发生错误: {e}")
             # 檢查是否已經回應過或 interaction 是否有效
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 精選留言时发生错误，请稍后重试。", ephemeral=True)
+                    await interaction.response.send_message("❌ 精选留言时发生错误，请稍后重试。", ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 精選留言时发生错误，请稍后重试。", ephemeral=True)
+                    await interaction.followup.send("❌ 精选留言时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
                 # 如果連 followup 都失敗，就記錄錯誤但不拋出異常
     
-    @app_commands.command(name="精選取消", description="取消指定留言的精選狀態（僅樓主可用）")
+    @app_commands.command(name="精选取消", description="取消指定留言的精选状态（仅楼主可用）")
     @app_commands.describe(
-        message_id="要取消精選的留言ID"
+        message_id="要取消精选的留言ID"
     )
     async def unfeature_message(self, interaction: discord.Interaction, message_id: str):
         """取消精選留言命令"""
         # 记录命令使用
-        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精選取消 命令，留言ID: {message_id}")
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精选取消 命令，留言ID: {message_id}")
         
         try:
             # 检查是否在帖子中
@@ -725,7 +801,7 @@ class FeaturedCommands(commands.Cog):
             
             # 检查是否为楼主
             if interaction.user.id != thread_owner_id:
-                await interaction.response.send_message("❌ 只有楼主才能取消精選留言！", ephemeral=True)
+                await interaction.response.send_message("❌ 只有楼主才能取消精选留言！", ephemeral=True)
                 return
             
             # 检查留言ID格式
@@ -738,40 +814,40 @@ class FeaturedCommands(commands.Cog):
             # 检查精選记录是否存在
             featured_info = self.db.get_featured_message_by_id(message_id_int, thread_id)
             if not featured_info:
-                await interaction.response.send_message("❌ 找不到該留言的精選記錄！請檢查留言ID是否正確。", ephemeral=True)
+                await interaction.response.send_message("❌ 找不到该留言的精选记录！请检查留言ID是否正确。", ephemeral=True)
                 return
             
-            # 尝试删除机器人的精選消息
+            # 尝试删除机器人的精选消息
             bot_message_deleted = False
             if featured_info.get('bot_message_id'):
                 try:
                     bot_message = await interaction.channel.fetch_message(featured_info['bot_message_id'])
                     await bot_message.delete()
                     bot_message_deleted = True
-                    logger.info(f"🗑️ 已删除机器人精選消息 ID: {featured_info['bot_message_id']}")
+                    logger.info(f"🗑️ 已删除机器人精选消息 ID: {featured_info['bot_message_id']}")
                 except discord.NotFound:
-                    logger.warning(f"⚠️ 找不到机器人精選消息 ID: {featured_info['bot_message_id']}")
+                    logger.warning(f"⚠️ 找不到机器人精选消息 ID: {featured_info['bot_message_id']}")
                 except discord.Forbidden:
-                    logger.warning(f"⚠️ 没有权限删除机器人精選消息 ID: {featured_info['bot_message_id']}")
+                    logger.warning(f"⚠️ 没有权限删除机器人精选消息 ID: {featured_info['bot_message_id']}")
                 except Exception as e:
-                    logger.error(f"❌ 删除机器人精選消息时发生错误: {e}")
+                    logger.error(f"❌ 删除机器人精选消息时发生错误: {e}")
             
-            # 移除精選记录
+            # 移除精选记录
             success = self.db.remove_featured_message(message_id_int, thread_id)
             if not success:
-                await interaction.response.send_message("❌ 取消精選失敗，請稍後重試。", ephemeral=True)
+                await interaction.response.send_message("❌ 取消精选失败，请稍后重试。", ephemeral=True)
                 return
             
             # 创建成功消息
             embed = discord.Embed(
-                title="✅ 精選已取消",
-                description=f"已成功取消 {featured_info['author_name']} 留言的精選狀態",
+                title="✅ 精选已取消",
+                description=f"已成功取消 {featured_info['author_name']} 留言的精选状态",
                 color=discord.Color.red(),
                 timestamp=discord.utils.utcnow()
             )
             
             embed.add_field(
-                name="被取消精選的用戶",
+                name="被取消精选的用户",
                 value=featured_info['author_name'],
                 inline=True
             )
@@ -791,7 +867,7 @@ class FeaturedCommands(commands.Cog):
             if bot_message_deleted:
                 embed.add_field(
                     name="🗑️ 消息清理",
-                    value="已自动删除精選通知消息",
+                    value="已自动删除精选通知消息",
                     inline=False
                 )
             
@@ -800,16 +876,16 @@ class FeaturedCommands(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
-            logger.error(f"取消精選留言时发生错误: {e}")
+            logger.error(f"取消精选留言时发生错误: {e}")
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 取消精選留言时发生错误，请稍后重试。", ephemeral=True)
+                    await interaction.response.send_message("❌ 取消精选留言时发生错误，请稍后重试。", ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 取消精選留言时发生错误，请稍后重试。", ephemeral=True)
+                    await interaction.followup.send("❌ 取消精选留言时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
     '''
-    @app_commands.command(name="排行榜", description="查看月度積分排行榜")
+    @app_commands.command(name="排行榜", description="查看月度积分排行榜")
     async def ranking(self, interaction: discord.Interaction):
         """查看月度積分排行榜"""
         # 记录命令使用
@@ -821,7 +897,7 @@ class FeaturedCommands(commands.Cog):
             
             embed = discord.Embed(
                 title=f"🏆 {current_month} 月度積分排行榜",
-                description="本月精選積分排名前十名",
+                description="本月精选积分排名前十名",
                 color=discord.Color.gold(),
                 timestamp=discord.utils.utcnow()
             )
@@ -868,7 +944,7 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
     '''  
-    @app_commands.command(name="總排行", description="查看總積分排行榜（僅管理組可用）")
+    @app_commands.command(name="总排行", description="查看总积分排行榜（仅管理组可用）")
     async def total_ranking(self, interaction: discord.Interaction):
         """查看總積分排行榜命令（僅管理組可用）"""
         # 记录命令使用
@@ -912,7 +988,7 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
     
-    @app_commands.command(name="积分", description="查看用户积分和精選记录（如果沒有指定用戶，默認查看自己）")
+    @app_commands.command(name="积分", description="查看用户积分和精选记录（如果没有指定用户，默认查看自己）")
     async def check_points(self, interaction: discord.Interaction, user: discord.Member = None):
         """查看积分命令（支持查看其他用户）"""
         # 记录命令使用
@@ -940,9 +1016,9 @@ class FeaturedCommands(commands.Cog):
             embed.add_field(
                 name="📈 積分統計",
                 value=f"**總積分**: {stats['points']} 積分\n"
-                      f"**本月積分**: {monthly_points} 積分\n"
-                      f"**被精選次數**: {stats['featured_count']} 次\n"
-                      f"**精選他人次數**: {stats['featuring_count']} 次",
+                      # f"**本月積分**: {monthly_points} 積分\n"
+                      f"**被精选次数**: {stats['featured_count']} 次\n"
+                      f"**精选他人次数**: {stats['featuring_count']} 次",
                 inline=False
             )
             
@@ -960,7 +1036,7 @@ class FeaturedCommands(commands.Cog):
                 # 如果已經回應過，使用 followup
                 await interaction.followup.send("❌ 查看积分时发生错误，请稍后重试。", ephemeral=True)
     
-    @app_commands.command(name="帖子统计", description="查看当前帖子的精選统计（仅自己可见）")
+    @app_commands.command(name="帖子统计", description="查看当前帖子的精选统计（仅自己可见）")
     async def thread_stats(self, interaction: discord.Interaction):
         """查看帖子统计命令（隱藏回應）"""
         # 记录命令使用
@@ -995,6 +1071,38 @@ class FeaturedCommands(commands.Cog):
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
                 # 如果連 followup 都失敗，就記錄錯誤但不拋出異常
     
+    @app_commands.command(name="月排行", description="查看本月活跃度排行榜（仅管理组可用）")
+    async def monthly_ranking(self, interaction: discord.Interaction):
+        """查看月度积分排行榜命令（仅管理组可用）"""
+        # 记录命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了月排行")
+        try:
+            # 检查是否为管理组（检查特定角色或权限）
+            has_admin_role = False
+            for role in interaction.user.roles:
+                if role.name in config.ADMIN_ROLE_NAMES:
+                    has_admin_role = True
+                    logger.info(f"✅ 用户 {interaction.user.name} 通过角色 '{role.name}' 获得管理权限")
+                    break
+            if not has_admin_role:
+                has_admin_role = interaction.user.guild_permissions.manage_messages or \
+                                interaction.user.guild_permissions.administrator
+            if not has_admin_role:
+                await interaction.response.send_message("❌ 此命令仅限管理组使用！", ephemeral=True)
+                return
+            # 创建分页视图
+            view = MonthlyRankingView(self.bot, interaction.guild_id, 1)
+            embed = await view.get_ranking_embed()
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            logger.error(f"查看月排行时发生错误: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 查看月排行时发生错误，请稍后重试。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 查看月排行时发生错误，请稍后重试。", ephemeral=True)
+            except Exception as followup_error:
+                logger.error(f"发送错误消息时发生错误: {followup_error}")
 
 
 async def main():

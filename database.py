@@ -464,3 +464,37 @@ class DatabaseManager:
     def get_message_preview(self, thread_id: int, message_id: int) -> str:
         """获取消息预览（这里返回一个简单的链接）"""
         return f"https://discord.com/channels/@me/{thread_id}/{message_id}" 
+
+    def get_monthly_ranking_paginated(self, guild_id: int, page: int = 1, per_page: int = 20):
+        """分页获取指定群组的月度积分排行榜"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+
+        year_month = self.get_current_month()
+
+        # 获取总记录数
+        cursor.execute('SELECT COUNT(*) FROM monthly_points WHERE guild_id = ? AND year_month = ?', (guild_id, year_month))
+        total_records = cursor.fetchone()[0]
+        total_pages = (total_records + per_page - 1) // per_page
+
+        # 获取当前页数据
+        offset = (page - 1) * per_page
+        cursor.execute('''
+            SELECT user_id, username, points
+            FROM monthly_points 
+            WHERE guild_id = ? AND year_month = ?
+            ORDER BY points DESC
+            LIMIT ? OFFSET ?
+        ''', (guild_id, year_month, per_page, offset))
+
+        results = cursor.fetchall()
+        conn.close()
+
+        return [
+            {
+                'user_id': row[0],
+                'username': row[1],
+                'points': row[2]
+            }
+            for row in results
+        ], total_pages 
