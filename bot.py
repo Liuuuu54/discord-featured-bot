@@ -397,7 +397,7 @@ class ThreadStatsView(discord.ui.View):
             reaction_count = await self.get_message_reaction_count(stat['message_id'])
             
             # 構建記錄內容
-                            record_content = f"**精选留言**: [点击查看]({message_link})\n"
+            record_content = f"**精选留言**: [点击查看]({message_link})\n"
             record_content += f"**時間**: {formatted_time}"
             
             # 添加表情符號統計
