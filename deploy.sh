@@ -25,6 +25,8 @@ print_message() {
 
 # 函数：检查Docker是否安装
 check_docker() {
+    print_message $BLUE "🔍 检查 Docker 环境..."
+    
     if ! command -v docker &> /dev/null; then
         print_message $RED "❌ Docker 未安装！请先安装 Docker"
         exit 1
@@ -34,16 +36,35 @@ check_docker() {
         print_message $RED "❌ Docker Compose 未安装！请先安装 Docker Compose"
         exit 1
     fi
+    
+    # 检查 Docker 服务是否运行
+    if ! docker info &> /dev/null; then
+        print_message $RED "❌ Docker 服务未运行！"
+        print_message $YELLOW "请运行以下命令启动 Docker:"
+        echo "sudo systemctl start docker"
+        echo "sudo systemctl enable docker"
+        exit 1
+    fi
+    
+    # 检查 Docker 版本
+    print_message $BLUE "📋 Docker 版本信息:"
+    docker --version
+    docker-compose --version
+    
+    print_message $GREEN "✅ Docker 环境检查通过"
 }
 
 # 函数：检查环境变量
 check_env() {
+    print_message $BLUE "🔍 检查环境变量..."
+    
     if [ ! -f ".env" ]; then
         print_message $YELLOW "⚠️  未找到 .env 文件"
         if [ -f "env_example.txt" ]; then
             print_message $BLUE "📝 正在复制 env_example.txt 为 .env"
             cp env_example.txt .env
             print_message $YELLOW "请编辑 .env 文件并设置您的 DISCORD_TOKEN"
+            print_message $BLUE "然后重新运行此脚本"
             exit 1
         else
             print_message $RED "❌ 未找到环境变量配置文件"
@@ -54,22 +75,98 @@ check_env() {
     # 检查DISCORD_TOKEN是否设置
     if ! grep -q "DISCORD_TOKEN=" .env || grep -q "DISCORD_TOKEN=$" .env; then
         print_message $RED "❌ 请在 .env 文件中设置 DISCORD_TOKEN"
+        print_message $YELLOW "当前 .env 文件内容:"
+        cat .env
         exit 1
     fi
+    
+    # 检查其他必要的环境变量
+    print_message $BLUE "📋 环境变量检查:"
+    echo "DISCORD_TOKEN: $(grep DISCORD_TOKEN .env | cut -d'=' -f2 | head -c 10)..."
+    echo "ADMIN_ROLE_NAMES: $(grep ADMIN_ROLE_NAMES .env | cut -d'=' -f2)"
+    echo "APPRECIATOR_ROLE_NAME: $(grep APPRECIATOR_ROLE_NAME .env | cut -d'=' -f2)"
+    
+    print_message $GREEN "✅ 环境变量检查通过"
 }
 
 # 函数：构建镜像
 build_image() {
     print_message $BLUE "🔨 正在构建 Docker 镜像..."
+    
+    # 检查是否有 Dockerfile
+    if [ ! -f "Dockerfile" ]; then
+        print_message $RED "❌ 未找到 Dockerfile"
+        exit 1
+    fi
+    
+    # 检查是否有 docker-compose.yml
+    if [ ! -f "docker-compose.yml" ]; then
+        print_message $RED "❌ 未找到 docker-compose.yml"
+        exit 1
+    fi
+    
+    # 检查是否有 requirements.txt
+    if [ ! -f "requirements.txt" ]; then
+        print_message $RED "❌ 未找到 requirements.txt"
+        exit 1
+    fi
+    
+    print_message $BLUE "📋 构建配置检查:"
+    echo "Dockerfile: $(ls -la Dockerfile)"
+    echo "docker-compose.yml: $(ls -la docker-compose.yml)"
+    echo "requirements.txt: $(ls -la requirements.txt)"
+    
     docker-compose build --no-cache
+    if [ $? -ne 0 ]; then
+        print_message $RED "❌ 镜像构建失败"
+        print_message $YELLOW "查看构建日志:"
+        docker-compose build --no-cache --progress=plain
+        exit 1
+    fi
+    
     print_message $GREEN "✅ 镜像构建完成"
 }
 
 # 函数：启动服务
 start_service() {
     print_message $BLUE "🚀 正在启动 Discord Bot..."
+    
+    # 检查镜像是否存在
+    if ! docker images | grep -q "discord-featured-bot"; then
+        print_message $YELLOW "⚠️  镜像不存在，正在构建..."
+        build_image
+    fi
+    
+    # 检查端口是否被占用
+    if netstat -tuln | grep -q ":80 "; then
+        print_message $YELLOW "⚠️  端口 80 可能被占用"
+    fi
+    
+    # 创建数据目录
+    mkdir -p data/logs
+    
     docker-compose up -d
-    print_message $GREEN "✅ Discord Bot 已启动"
+    if [ $? -ne 0 ]; then
+        print_message $RED "❌ 启动失败"
+        print_message $YELLOW "查看详细错误信息:"
+        docker-compose logs
+        exit 1
+    fi
+    
+    # 等待几秒让容器完全启动
+    sleep 3
+    
+    # 检查容器状态
+    if docker-compose ps | grep -q "Up"; then
+        print_message $GREEN "✅ Discord Bot 已启动"
+        print_message $BLUE "📊 容器状态:"
+        docker-compose ps
+    else
+        print_message $RED "❌ 容器启动失败"
+        print_message $YELLOW "查看容器日志:"
+        docker-compose logs
+        exit 1
+    fi
 }
 
 # 函数：停止服务
@@ -89,7 +186,15 @@ restart_service() {
 # 函数：查看日志
 view_logs() {
     print_message $BLUE "📝 显示 Discord Bot 日志..."
-    docker-compose logs -f
+    
+    # 检查容器是否运行
+    if ! docker-compose ps | grep -q "Up"; then
+        print_message $YELLOW "⚠️  容器未运行，显示历史日志:"
+        docker-compose logs --tail=50
+    else
+        print_message $BLUE "🔄 实时日志 (按 Ctrl+C 退出):"
+        docker-compose logs -f
+    fi
 }
 
 # 函数：查看状态
@@ -99,6 +204,12 @@ show_status() {
     echo
     print_message $BLUE "🔍 容器健康状态:"
     docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    echo
+    print_message $BLUE "📈 容器资源使用:"
+    docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}" 2>/dev/null || echo "无法获取资源使用信息"
+    echo
+    print_message $BLUE "📝 最近日志 (最后10行):"
+    docker-compose logs --tail=10
 }
 
 # 函数：清理
@@ -123,6 +234,37 @@ backup_data() {
     fi
 }
 
+# 函数：调试信息
+debug_info() {
+    print_message $BLUE "🔍 系统调试信息:"
+    echo "操作系统: $(uname -a)"
+    echo "Docker 版本: $(docker --version)"
+    echo "Docker Compose 版本: $(docker-compose --version)"
+    echo "当前目录: $(pwd)"
+    echo "文件列表:"
+    ls -la
+    echo
+    print_message $BLUE "Docker 镜像列表:"
+    docker images
+    echo
+    print_message $BLUE "Docker 容器列表:"
+    docker ps -a
+    echo
+    print_message $BLUE "Docker 网络列表:"
+    docker network ls
+    echo
+    if [ -f ".env" ]; then
+        print_message $BLUE ".env 文件内容:"
+        cat .env
+    fi
+    echo
+    print_message $BLUE "系统资源信息:"
+    echo "磁盘使用: $(df -h .)"
+    echo "内存使用: $(free -h)"
+    echo "端口占用:"
+    netstat -tuln | grep -E ":(80|443|3000|8080)" || echo "未发现相关端口占用"
+}
+
 # 函数：显示帮助
 show_help() {
     echo "Discord Bot Docker 部署脚本"
@@ -139,6 +281,7 @@ show_help() {
     echo "  status    查看状态"
     echo "  backup    备份数据"
     echo "  cleanup   清理 Docker 资源"
+    echo "  debug     显示调试信息"
     echo "  help      显示此帮助信息"
     echo
 }
@@ -185,6 +328,9 @@ main() {
         "cleanup")
             check_docker
             cleanup
+            ;;
+        "debug")
+            debug_info
             ;;
         "help"|*)
             show_help
