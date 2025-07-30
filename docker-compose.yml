@@ -6,6 +6,9 @@ services:
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - ADMIN_ROLE_NAMES=${ADMIN_ROLE_NAMES:-管理组,管理员,Admin,Moderator,管理,版主}
+      - APPRECIATOR_ROLE_NAME=${APPRECIATOR_ROLE_NAME:-鉴赏家}
+      - APPRECIATOR_MIN_POINTS=${APPRECIATOR_MIN_POINTS:-5}
+      - APPRECIATOR_MIN_REFERRALS=${APPRECIATOR_MIN_REFERRALS:-5}
     volumes:
       # 持久化数据目录
       - ./data:/app/data

@@ -23,8 +23,10 @@ COPY . .
 # 创建数据目录
 RUN mkdir -p /app/data/logs
 
-# 设置启动脚本权限
+# 设置文件权限
 RUN chmod +x start.sh
+RUN chmod +x deploy.sh
+RUN chmod 755 *.py
 
 # 启动命令
 CMD ["./start.sh"] 

@@ -31,6 +31,9 @@ start_bot() {
     echo "=================================="
     
     # 启动Bot（日志已配置在bot.py中）
+    echo "🔍 检查Python文件..."
+    python -c "import bot; print('✅ bot.py 导入成功')"
+    echo "🚀 启动主程序..."
     python bot.py
 }
 
