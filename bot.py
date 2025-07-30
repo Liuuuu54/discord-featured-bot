@@ -692,10 +692,26 @@ class AppreciatorApplicationView(discord.ui.View):
                     )
                     logger.info(f"✅ 在群组 {interaction.guild.name} 创建了 {config.APPRECIATOR_ROLE_NAME} 角色")
                 except discord.Forbidden:
-                    await interaction.response.send_message(
-                        f"❌ 机器人没有权限创建 {config.APPRECIATOR_ROLE_NAME} 角色，请联系管理员手动创建。",
-                        ephemeral=True
+                    embed = discord.Embed(
+                        title="❌ 权限不足",
+                        description="机器人无法创建鉴赏家角色",
+                        color=0xff0000,
+                        timestamp=discord.utils.utcnow()
                     )
+                    embed.add_field(
+                        name="🔧 解决方案",
+                        value="请群组管理员：\n"
+                              "1. 手动创建 `鉴赏家` 角色\n"
+                              "2. 确保机器人有 `管理角色` 权限\n"
+                              "3. 确保机器人角色在鉴赏家角色之上",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name="📋 所需权限",
+                        value="• 管理角色\n• 管理成员",
+                        inline=False
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
             
             # 分配角色
@@ -733,10 +749,26 @@ class AppreciatorApplicationView(discord.ui.View):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 
             except discord.Forbidden:
-                await interaction.response.send_message(
-                    f"❌ 机器人没有权限分配 {config.APPRECIATOR_ROLE_NAME} 角色，请联系管理员。",
-                    ephemeral=True
+                embed = discord.Embed(
+                    title="❌ 权限不足",
+                    description="机器人无法分配鉴赏家角色",
+                    color=0xff0000,
+                    timestamp=discord.utils.utcnow()
                 )
+                embed.add_field(
+                    name="🔧 解决方案",
+                    value="请群组管理员：\n"
+                          "1. 确保机器人有 `管理角色` 权限\n"
+                          "2. 确保机器人角色在鉴赏家角色之上\n"
+                          "3. 检查鉴赏家角色是否存在",
+                    inline=False
+                )
+                embed.add_field(
+                    name="📋 所需权限",
+                    value="• 管理角色\n• 管理成员",
+                    inline=False
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
                 
         except Exception as e:
@@ -1251,12 +1283,12 @@ class FeaturedCommands(commands.Cog):
             )
             embed.add_field(
                 name="🎯 获得身份",
-                value=f"**身份组**: {config.APPRECIATOR_ROLE_NAME}\n**颜色**: 金色\n**权限**: {config.APPRECIATOR_ROLE_NAME}专属权限",
+                value=f"**身份组**: {config.APPRECIATOR_ROLE_NAME}",
                 inline=False
             )
             embed.add_field(
                 name="💡 说明",
-                value="• 满足条件的用户可点击按钮自动获得身份\n• 已拥有该身份的用户无法重复申请\n• 机器人会自动检查您的积分和引荐人数",
+                value="• 满足条件的用户可点击按钮自动获得身份\n• 已拥有该身份的用户无法重复申请\n• 机器人会自动检查您的积分和引荐人数\n• 如遇权限问题，请联系群组管理员",
                 inline=False
             )
             
