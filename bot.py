@@ -643,25 +643,23 @@ class AppreciatorApplicationView(discord.ui.View):
         super().__init__(timeout=None)  # 永久有效
         self.bot = bot
     
-    @discord.ui.button(label="申请鉴赏家身份", style=discord.ButtonStyle.success, emoji="🎨")
+    @discord.ui.button(label="申请鉴赏家身份", style=discord.ButtonStyle.success, emoji="📜")
     async def apply_appreciator(self, interaction: discord.Interaction, button: discord.ui.Button):
         """申请鉴赏家身份"""
         try:
             # 获取用户统计信息
             stats = self.bot.db.get_user_stats(interaction.user.id, interaction.guild_id)
             
-            # 检查积分要求
-            if stats['points'] < config.APPRECIATOR_MIN_POINTS:
-                await interaction.response.send_message(
-                    f"❌ 积分不足！需要至少 {config.APPRECIATOR_MIN_POINTS} 积分，您当前有 {stats['points']} 积分。",
-                    ephemeral=True
-                )
-                return
+            # 检查积分或引荐人数要求（满足其中一个即可）
+            points_ok = stats['points'] >= config.APPRECIATOR_MIN_POINTS
+            referrals_ok = stats['featuring_count'] >= config.APPRECIATOR_MIN_REFERRALS
             
-            # 检查引荐人数要求
-            if stats['featuring_count'] < config.APPRECIATOR_MIN_REFERRALS:
+            if not points_ok and not referrals_ok:
                 await interaction.response.send_message(
-                    f"❌ 引荐人数不足！需要至少 {config.APPRECIATOR_MIN_REFERRALS} 人，您当前引荐了 {stats['featuring_count']} 人。",
+                    f"❌ 申请条件不满足！\n"
+                    f"需要满足以下条件之一：\n"
+                    f"• 积分至少 {config.APPRECIATOR_MIN_POINTS} 分（您当前有 {stats['points']} 分）\n"
+                    f"• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人（您当前引荐了 {stats['featuring_count']} 人）",
                     ephemeral=True
                 )
                 return
@@ -705,11 +703,11 @@ class AppreciatorApplicationView(discord.ui.View):
                 await member.add_roles(appreciator_role, reason=f"用户申请{config.APPRECIATOR_ROLE_NAME}身份")
                 
                 # 记录申请成功
-                logger.info(f"🎨 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} 成功申请获得 {config.APPRECIATOR_ROLE_NAME} 身份")
+                logger.info(f"📜 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} 成功申请获得 {config.APPRECIATOR_ROLE_NAME} 身份")
                 
                 # 发送成功消息
                 embed = discord.Embed(
-                    title=f"🎨 {config.APPRECIATOR_ROLE_NAME}申请成功！",
+                    title=f"📜 {config.APPRECIATOR_ROLE_NAME}申请成功！",
                     description=f"恭喜您成功获得 **{config.APPRECIATOR_ROLE_NAME}** 身份！",
                     color=0x00ff00,
                     timestamp=discord.utils.utcnow()
@@ -719,9 +717,16 @@ class AppreciatorApplicationView(discord.ui.View):
                     value=f"**总积分**: {stats['points']} 分\n**引荐人数**: {stats['featuring_count']} 人",
                     inline=False
                 )
+                # 显示用户满足的条件
+                conditions_met = []
+                if points_ok:
+                    conditions_met.append(f"✅ 积分 {stats['points']} 分（满足 {config.APPRECIATOR_MIN_POINTS} 分要求）")
+                if referrals_ok:
+                    conditions_met.append(f"✅ 引荐 {stats['featuring_count']} 人（满足 {config.APPRECIATOR_MIN_REFERRALS} 人要求）")
+                
                 embed.add_field(
                     name="🎯 申请条件",
-                    value=f"**最低积分**: {config.APPRECIATOR_MIN_POINTS} 分\n**最低引荐人数**: {config.APPRECIATOR_MIN_REFERRALS} 人",
+                    value=f"**满足条件**：\n" + "\n".join(conditions_met) + f"\n\n**完整要求**：\n• 积分至少 {config.APPRECIATOR_MIN_POINTS} 分\n• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人",
                     inline=False
                 )
                 
@@ -1232,14 +1237,16 @@ class FeaturedCommands(commands.Cog):
             
             # 创建鉴赏申请窗口
             embed = discord.Embed(
-                title=f"🎨 {config.APPRECIATOR_ROLE_NAME}申请窗口",
+                title=f"📜 {config.APPRECIATOR_ROLE_NAME}申请窗口",
                 description=f"点击下方按钮申请{config.APPRECIATOR_ROLE_NAME}身份",
                 color=0x00ff00,
                 timestamp=discord.utils.utcnow()
             )
             embed.add_field(
                 name="📋 申请条件",
-                value=f"**最低积分**: {config.APPRECIATOR_MIN_POINTS} 分\n**最低引荐人数**: {config.APPRECIATOR_MIN_REFERRALS} 人",
+                value=f"**满足以下条件之一即可**：\n"
+                      f"• 积分至少 {config.APPRECIATOR_MIN_POINTS} 分\n"
+                      f"• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人",
                 inline=False
             )
             embed.add_field(
