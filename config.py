@@ -51,4 +51,9 @@ if ADMIN_ROLES_ENV:
         custom_admin_roles = [role.strip() for role in ADMIN_ROLES_ENV.split(',')]
         ADMIN_ROLE_NAMES = custom_admin_roles
     except Exception as e:
-        print(f"⚠️ 解析环境变量 ADMIN_ROLE_NAMES 失败: {e}，使用默认配置") 
+        print(f"⚠️ 解析环境变量 ADMIN_ROLES_ENV 失败: {e}，使用默认配置")
+
+# 鉴赏申请窗口配置
+APPRECIATOR_ROLE_NAME = os.getenv('APPRECIATOR_ROLE_NAME', '鉴赏家')  # 鉴赏家角色名称
+APPRECIATOR_MIN_POINTS = int(os.getenv('APPRECIATOR_MIN_POINTS', '5'))  # 最低积分要求
+APPRECIATOR_MIN_REFERRALS = int(os.getenv('APPRECIATOR_MIN_REFERRALS', '5'))  # 最低引荐人数要求 

@@ -10,6 +10,14 @@ DISCORD_TOKEN=your_discord_bot_token_here
 # 默认值: 管理组,管理员,Admin,Moderator,管理,版主
 ADMIN_ROLE_NAMES=管理组,管理员,Admin,Moderator,管理,版主
 
+# 鉴赏家申请配置 (可选)
+# 鉴赏家身份组名称，默认值: 鉴赏家
+APPRECIATOR_ROLE_NAME=鉴赏家
+# 最低积分要求，默认值: 5
+APPRECIATOR_MIN_POINTS=5
+# 最低引荐人数要求，默认值: 5
+APPRECIATOR_MIN_REFERRALS=5
+
 # 數據庫配置
 DATABASE_PATH=./data/bot_database.db
 

@@ -48,7 +48,7 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /月排行')
+        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /月排行, /鉴赏申请窗口')
         logger.info('=' * 50)
 
 class FeaturedRecordsView(discord.ui.View):
@@ -636,12 +636,169 @@ class ThreadStatsView(discord.ui.View):
         embed = await self.get_records_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
+class AppreciatorApplicationView(discord.ui.View):
+    """鉴赏申请窗口视图"""
+    def __init__(self, bot: FeaturedMessageBot):
+        super().__init__(timeout=None)  # 永久有效
+        self.bot = bot
+    
+    @discord.ui.button(label=f"申请{config.APPRECIATOR_ROLE_NAME}身份", style=discord.ButtonStyle.success, emoji="🎨")
+    async def apply_appreciator(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """申请鉴赏家身份"""
+        try:
+            # 获取用户统计信息
+            stats = self.bot.db.get_user_stats(interaction.user.id, interaction.guild_id)
+            
+            # 检查积分要求
+            if stats['points'] < config.APPRECIATOR_MIN_POINTS:
+                await interaction.response.send_message(
+                    f"❌ 积分不足！需要至少 {config.APPRECIATOR_MIN_POINTS} 积分，您当前有 {stats['points']} 积分。",
+                    ephemeral=True
+                )
+                return
+            
+            # 检查引荐人数要求
+            if stats['featuring_count'] < config.APPRECIATOR_MIN_REFERRALS:
+                await interaction.response.send_message(
+                    f"❌ 引荐人数不足！需要至少 {config.APPRECIATOR_MIN_REFERRALS} 人，您当前引荐了 {stats['featuring_count']} 人。",
+                    ephemeral=True
+                )
+                return
+            
+            # 检查是否已经有鉴赏家身份
+            member = interaction.guild.get_member(interaction.user.id)
+            if member:
+                for role in member.roles:
+                    if role.name == config.APPRECIATOR_ROLE_NAME:
+                        await interaction.response.send_message(
+                            f"❌ 您已经拥有 {config.APPRECIATOR_ROLE_NAME} 身份了！",
+                            ephemeral=True
+                        )
+                        return
+            
+            # 查找或创建鉴赏家角色
+            appreciator_role = None
+            for role in interaction.guild.roles:
+                if role.name == config.APPRECIATOR_ROLE_NAME:
+                    appreciator_role = role
+                    break
+            
+            if not appreciator_role:
+                # 创建鉴赏家角色
+                try:
+                    appreciator_role = await interaction.guild.create_role(
+                        name=config.APPRECIATOR_ROLE_NAME,
+                        color=discord.Color.gold(),
+                        reason=f"{config.APPRECIATOR_ROLE_NAME}身份组"
+                    )
+                    logger.info(f"✅ 在群组 {interaction.guild.name} 创建了 {config.APPRECIATOR_ROLE_NAME} 角色")
+                except discord.Forbidden:
+                    await interaction.response.send_message(
+                        f"❌ 机器人没有权限创建 {config.APPRECIATOR_ROLE_NAME} 角色，请联系管理员手动创建。",
+                        ephemeral=True
+                    )
+                    return
+            
+            # 分配角色
+            try:
+                await member.add_roles(appreciator_role, reason=f"用户申请{config.APPRECIATOR_ROLE_NAME}身份")
+                
+                # 记录申请成功
+                logger.info(f"🎨 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} 成功申请获得 {config.APPRECIATOR_ROLE_NAME} 身份")
+                
+                # 发送成功消息
+                embed = discord.Embed(
+                    title=f"🎨 {config.APPRECIATOR_ROLE_NAME}申请成功！",
+                    description=f"恭喜您成功获得 **{config.APPRECIATOR_ROLE_NAME}** 身份！",
+                    color=0x00ff00,
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(
+                    name="📊 您的成就",
+                    value=f"**总积分**: {stats['points']} 分\n**引荐人数**: {stats['featuring_count']} 人",
+                    inline=False
+                )
+                embed.add_field(
+                    name="🎯 申请条件",
+                    value=f"**最低积分**: {config.APPRECIATOR_MIN_POINTS} 分\n**最低引荐人数**: {config.APPRECIATOR_MIN_REFERRALS} 人",
+                    inline=False
+                )
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                
+            except discord.Forbidden:
+                await interaction.response.send_message(
+                    f"❌ 机器人没有权限分配 {config.APPRECIATOR_ROLE_NAME} 角色，请联系管理员。",
+                    ephemeral=True
+                )
+                return
+                
+        except Exception as e:
+            logger.error(f"申请{config.APPRECIATOR_ROLE_NAME}身份时发生错误: {e}")
+            await interaction.response.send_message(
+                "❌ 申请过程中发生错误，请稍后重试。",
+                ephemeral=True
+            )
+
 class FeaturedCommands(commands.Cog):
     def __init__(self, bot: FeaturedMessageBot):
         self.bot = bot
         self.db = bot.db
     
-    @app_commands.command(name="精选", description="将指定用户的留言设为精选，该用户获得1积分")
+    def check_message_quality(self, message) -> dict:
+        """检查留言内容质量"""
+        # 检查是否有附件（图片、文件等）
+        if message.attachments:
+            return {'valid': False, 'reason': '不能精选只包含图片或文件的留言！'}
+        
+        # 检查是否有贴纸
+        if message.stickers:
+            return {'valid': False, 'reason': '不能精选只包含贴纸的留言！'}
+        
+        # 获取文字内容
+        content = message.content.strip()
+        
+        # 检查是否为空
+        if not content:
+            return {'valid': False, 'reason': '留言内容不能为空！'}
+        
+        # 检查长度（最少10个字符）
+        if len(content) < 10:
+            return {'valid': False, 'reason': '留言内容至少需要10个字符！'}
+        
+        # 检查是否只包含表情符号
+        # 移除所有表情符号和空白字符
+        text_only = content
+        # 移除Discord表情符号格式 <:name:id>
+        import re
+        text_only = re.sub(r'<a?:[^:]+:\d+>', '', text_only)
+        # 移除Unicode表情符号
+        text_only = re.sub(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002600-\U00027BF\U0001F900-\U0001F9FF]', '', text_only)
+        # 移除空白字符
+        text_only = text_only.strip()
+        
+        if not text_only:
+            return {'valid': False, 'reason': '留言不能只包含表情符号！'}
+        
+        # 检查是否只包含重复字符
+        if len(set(text_only)) <= 2 and len(text_only) > 5:
+            return {'valid': False, 'reason': '留言内容过于简单，请提供更有价值的回复！'}
+        
+        # 检查是否包含常见垃圾内容
+        spam_patterns = [
+            r'^[^\w\s]*$',  # 只包含特殊字符
+            r'^[a-zA-Z]{1,3}$',  # 只有1-3个字母
+            r'^[0-9]{1,3}$',  # 只有1-3个数字
+            r'^[^\w\s]{3,}$',  # 3个以上特殊字符
+        ]
+        
+        for pattern in spam_patterns:
+            if re.match(pattern, content):
+                return {'valid': False, 'reason': '留言内容不符合精选标准！'}
+        
+        return {'valid': True, 'reason': '内容检查通过'}
+    
+    @app_commands.command(name="精选", description="将指定用户的留言设为精选，该用户获得1积分（留言需至少10字符且不能只含表情）")
     @app_commands.describe(
         message_id="要精选的留言ID",
         reason="精选原因（可选）"
@@ -675,6 +832,12 @@ class FeaturedCommands(commands.Cog):
             # 检查是否精選自己的留言
             if message.author.id == interaction.user.id:
                 await interaction.response.send_message("❌ 不能精选自己的留言！", ephemeral=True)
+                return
+            
+            # 检查留言内容质量
+            content_check = self.check_message_quality(message)
+            if not content_check['valid']:
+                await interaction.response.send_message(f"❌ {content_check['reason']}", ephemeral=True)
                 return
             
             # 检查是否已经精選过该用户
@@ -884,66 +1047,7 @@ class FeaturedCommands(commands.Cog):
                     await interaction.followup.send("❌ 取消精选留言时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
-    '''
-    @app_commands.command(name="排行榜", description="查看月度积分排行榜")
-    async def ranking(self, interaction: discord.Interaction):
-        """查看月度積分排行榜"""
-        # 记录命令使用
-        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了月度排行榜")
-        
-        try:
-            ranking_data = self.db.get_monthly_ranking(interaction.guild_id, 10)
-            current_month = self.db.get_current_month()
-            
-            embed = discord.Embed(
-                title=f"🏆 {current_month} 月度積分排行榜",
-                description="本月精选积分排名前十名",
-                color=discord.Color.gold(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            if not ranking_data:
-                embed.add_field(
-                    name="📝 排行榜",
-                    value="本月還沒有積分記錄",
-                    inline=False
-                )
-            else:
-                for i, rank_info in enumerate(ranking_data, 1):
-                    # 獲取用戶資訊
-                    user = self.bot.get_user(rank_info['user_id'])
-                    username = user.display_name if user else rank_info['username']
-                    
-                    # 設置排名圖標
-                    if i == 1:
-                        rank_icon = "🥇"
-                    elif i == 2:
-                        rank_icon = "🥈"
-                    elif i == 3:
-                        rank_icon = "🥉"
-                    else:
-                        rank_icon = f"{i}."
-                    
-                    embed.add_field(
-                        name=f"{rank_icon} {username}",
-                        value=f"積分: {rank_info['points']} 分",
-                        inline=False
-                    )
-            
-            embed.set_footer(text=f"每月1日重置積分 • 當前月份: {current_month}")
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-        except Exception as e:
-            logger.error(f"查看排行榜时发生错误: {e}")
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 查看排行榜时发生错误，请稍后重试。", ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ 查看排行榜时发生错误，请稍后重试。", ephemeral=True)
-            except Exception as followup_error:
-                logger.error(f"发送错误消息时发生错误: {followup_error}")
-    '''  
+                
     @app_commands.command(name="总排行", description="查看总积分排行榜（仅管理组可用）")
     async def total_ranking(self, interaction: discord.Interaction):
         """查看總積分排行榜命令（僅管理組可用）"""
@@ -1018,7 +1122,7 @@ class FeaturedCommands(commands.Cog):
                 value=f"**總積分**: {stats['points']} 積分\n"
                       # f"**本月積分**: {monthly_points} 積分\n"
                       f"**被精选次数**: {stats['featured_count']} 次\n"
-                      f"**精选他人次数**: {stats['featuring_count']} 次",
+                      f"**引荐人数**: {stats['featuring_count']} 人",
                 inline=False
             )
             
@@ -1104,6 +1208,65 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
 
+    @app_commands.command(name="鉴赏申请窗口", description=f"创建{config.APPRECIATOR_ROLE_NAME}申请窗口（仅管理组可用）")
+    async def create_appreciator_window(self, interaction: discord.Interaction):
+        """创建鉴赏申请窗口命令（仅管理组可用）"""
+        # 记录命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 创建了鉴赏申请窗口")
+        
+        try:
+            # 检查是否为管理组（检查特定角色或权限）
+            has_admin_role = False
+            for role in interaction.user.roles:
+                if role.name in config.ADMIN_ROLE_NAMES:
+                    has_admin_role = True
+                    logger.info(f"✅ 用户 {interaction.user.name} 通过角色 '{role.name}' 获得管理权限")
+                    break
+            if not has_admin_role:
+                has_admin_role = interaction.user.guild_permissions.manage_messages or \
+                                interaction.user.guild_permissions.administrator
+            if not has_admin_role:
+                await interaction.response.send_message("❌ 此命令仅限管理组使用！", ephemeral=True)
+                return
+            
+            # 创建鉴赏申请窗口
+            embed = discord.Embed(
+                title=f"🎨 {config.APPRECIATOR_ROLE_NAME}申请窗口",
+                description=f"点击下方按钮申请{config.APPRECIATOR_ROLE_NAME}身份",
+                color=0x00ff00,
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(
+                name="📋 申请条件",
+                value=f"**最低积分**: {config.APPRECIATOR_MIN_POINTS} 分\n**最低引荐人数**: {config.APPRECIATOR_MIN_REFERRALS} 人",
+                inline=False
+            )
+            embed.add_field(
+                name="🎯 获得身份",
+                value=f"**身份组**: {config.APPRECIATOR_ROLE_NAME}\n**颜色**: 金色\n**权限**: {config.APPRECIATOR_ROLE_NAME}专属权限",
+                inline=False
+            )
+            embed.add_field(
+                name="💡 说明",
+                value="• 满足条件的用户可点击按钮自动获得身份\n• 已拥有该身份的用户无法重复申请\n• 机器人会自动检查您的积分和引荐人数",
+                inline=False
+            )
+            
+            # 创建视图
+            view = AppreciatorApplicationView(self.bot)
+            
+            # 发送窗口
+            await interaction.response.send_message(embed=embed, view=view)
+            
+        except Exception as e:
+            logger.error(f"创建鉴赏申请窗口时发生错误: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 创建鉴赏申请窗口时发生错误，请稍后重试。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 创建鉴赏申请窗口时发生错误，请稍后重试。", ephemeral=True)
+            except Exception as followup_error:
+                logger.error(f"发送错误消息时发生错误: {followup_error}")
 
 async def main():
     """主函数"""

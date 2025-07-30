@@ -240,9 +240,9 @@ class DatabaseManager:
         ''', (user_id, guild_id))
         featured_count = cursor.fetchone()[0]
         
-        # 获取精選他人次数 (仅限当前群组)
+        # 获取引荐人数 (仅限当前群组，去重统计)
         cursor.execute('''
-            SELECT COUNT(*) FROM featured_messages WHERE featured_by_id = ? AND guild_id = ?
+            SELECT COUNT(DISTINCT author_id) FROM featured_messages WHERE featured_by_id = ? AND guild_id = ?
         ''', (user_id, guild_id))
         featuring_count = cursor.fetchone()[0]
         
