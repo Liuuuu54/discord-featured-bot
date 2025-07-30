@@ -23,6 +23,7 @@ class FeaturedMessageBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True
+        intents.members = True  # 需要members权限来管理角色
         
         super().__init__(
             command_prefix=config.BOT_PREFIX,
@@ -642,7 +643,7 @@ class AppreciatorApplicationView(discord.ui.View):
         super().__init__(timeout=None)  # 永久有效
         self.bot = bot
     
-    @discord.ui.button(label=f"申请{config.APPRECIATOR_ROLE_NAME}身份", style=discord.ButtonStyle.success, emoji="🎨")
+    @discord.ui.button(label="申请鉴赏家身份", style=discord.ButtonStyle.success, emoji="🎨")
     async def apply_appreciator(self, interaction: discord.Interaction, button: discord.ui.Button):
         """申请鉴赏家身份"""
         try:
@@ -1208,7 +1209,7 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
 
-    @app_commands.command(name="鉴赏申请窗口", description=f"创建{config.APPRECIATOR_ROLE_NAME}申请窗口（仅管理组可用）")
+    @app_commands.command(name="鉴赏申请窗口", description="创建鉴赏家申请窗口（仅管理组可用）")
     async def create_appreciator_window(self, interaction: discord.Interaction):
         """创建鉴赏申请窗口命令（仅管理组可用）"""
         # 记录命令使用
