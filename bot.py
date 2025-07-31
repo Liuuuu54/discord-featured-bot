@@ -822,7 +822,7 @@ class FeaturedCommands(commands.Cog):
         import re
         text_only = re.sub(r'<a?:[^:]+:\d+>', '', text_only)
         # 移除Unicode表情符号
-        text_only = re.sub(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002600-\U00027BF\U0001F900-\U0001F9FF]', '', text_only)
+        text_only = re.sub(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002600-\U000027BF\U0001F900-\U0001F9FF]', '', text_only)
         # 移除空白字符
         text_only = text_only.strip()
         
