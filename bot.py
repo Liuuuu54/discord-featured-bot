@@ -783,15 +783,22 @@ class FeaturedCommands(commands.Cog):
         self.bot = bot
         self.db = bot.db
     
+    def extract_message_id_from_url(self, url: str) -> int:
+        """从Discord消息URL中提取消息ID"""
+        import re
+        # Discord消息URL格式: https://discord.com/channels/guild_id/channel_id/message_id
+        pattern = r'https://discord\.com/channels/\d+/\d+/(\d+)'
+        match = re.search(pattern, url)
+        if match:
+            return int(match.group(1))
+        else:
+            raise ValueError("无效的Discord消息URL格式")
+    
     def check_message_quality(self, message) -> dict:
         """检查留言内容质量"""
-        # 检查是否有附件（图片、文件等）
-        if message.attachments:
-            return {'valid': False, 'reason': '不能精选只包含图片或文件的留言！'}
-        
-        # 检查是否有贴纸
-        if message.stickers:
-            return {'valid': False, 'reason': '不能精选只包含贴纸的留言！'}
+        # 检查是否为bot消息或包含embed
+        if message.author.bot or message.embeds:
+            return {'valid': False, 'reason': '不能精选bot消息或系统消息！'}
         
         # 获取文字内容
         content = message.content.strip()
@@ -803,6 +810,10 @@ class FeaturedCommands(commands.Cog):
         # 检查长度（最少10个字符）
         if len(content) < 10:
             return {'valid': False, 'reason': '留言内容至少需要10个字符！'}
+        
+        # 检查是否有贴纸
+        if message.stickers:
+            return {'valid': False, 'reason': '不能精选只包含贴纸的留言！'}
         
         # 检查是否只包含表情符号
         # 移除所有表情符号和空白字符
@@ -838,13 +849,13 @@ class FeaturedCommands(commands.Cog):
     
     @app_commands.command(name="精选", description="将指定用户的留言设为精选，该用户获得1积分（留言需至少10字符且不能只含表情）")
     @app_commands.describe(
-        message_id="要精选的留言ID",
+        message_url="要精选的留言URL（右键留言 -> 复制链接）",
         reason="精选原因（可选）"
     )
-    async def feature_message(self, interaction: discord.Interaction, message_id: str, reason: str = None):
+    async def feature_message(self, interaction: discord.Interaction, message_url: str, reason: str = None):
         """精選留言命令"""
         # 记录命令使用
-        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精选 命令，留言ID: {message_id}")
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精选 命令，留言URL: {message_url}")
         
         try:
             # 检查是否在帖子中
@@ -860,11 +871,18 @@ class FeaturedCommands(commands.Cog):
                 await interaction.response.send_message("❌ 只有楼主才能精选留言！", ephemeral=True)
                 return
             
+            # 从URL中提取消息ID
+            try:
+                message_id = self.extract_message_id_from_url(message_url)
+            except ValueError:
+                await interaction.response.send_message("❌ 无效的留言URL格式！请右键留言选择'复制链接'获取正确的URL。", ephemeral=True)
+                return
+            
             # 获取要精選的留言
             try:
-                message = await interaction.channel.fetch_message(int(message_id))
-            except (ValueError, discord.NotFound):
-                await interaction.response.send_message("❌ 找不到指定的留言！请检查留言ID是否正确。", ephemeral=True)
+                message = await interaction.channel.fetch_message(message_id)
+            except discord.NotFound:
+                await interaction.response.send_message("❌ 找不到指定的留言！请检查留言URL是否正确，或确认留言在当前帖子中。", ephemeral=True)
                 return
             
             # 检查是否精選自己的留言
@@ -984,12 +1002,12 @@ class FeaturedCommands(commands.Cog):
     
     @app_commands.command(name="精选取消", description="取消指定留言的精选状态（仅楼主可用）")
     @app_commands.describe(
-        message_id="要取消精选的留言ID"
+        message_url="要取消精选的留言URL（右键留言 -> 复制链接）"
     )
-    async def unfeature_message(self, interaction: discord.Interaction, message_id: str):
+    async def unfeature_message(self, interaction: discord.Interaction, message_url: str):
         """取消精選留言命令"""
         # 记录命令使用
-        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精选取消 命令，留言ID: {message_id}")
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了 /精选取消 命令，留言URL: {message_url}")
         
         try:
             # 检查是否在帖子中
@@ -1005,11 +1023,11 @@ class FeaturedCommands(commands.Cog):
                 await interaction.response.send_message("❌ 只有楼主才能取消精选留言！", ephemeral=True)
                 return
             
-            # 检查留言ID格式
+            # 从URL中提取消息ID
             try:
-                message_id_int = int(message_id)
+                message_id_int = self.extract_message_id_from_url(message_url)
             except ValueError:
-                await interaction.response.send_message("❌ 留言ID格式錯誤！請輸入正確的數字ID。", ephemeral=True)
+                await interaction.response.send_message("❌ 无效的留言URL格式！请右键留言选择'复制链接'获取正确的URL。", ephemeral=True)
                 return
             
             # 检查精選记录是否存在
@@ -1289,6 +1307,15 @@ class FeaturedCommands(commands.Cog):
             embed.add_field(
                 name="💡 说明",
                 value="• 满足条件的用户可点击按钮自动获得身份\n• 已拥有该身份的用户无法重复申请\n• 机器人会自动检查您的积分和引荐人数\n• 如遇权限问题，请联系群组管理员",
+                inline=False
+            )
+            embed.add_field(
+                name="📖 快速使用指南",
+                value="**如何参与精选系统？**\n"
+                      "• `/精选` - 楼主可精选优质留言（右键留言→复制链接）\n"
+                      "• `/积分` - 查看自己的积分和精选记录\n"
+                      "• `/帖子统计` - 在帖子中查看精选统计\n\n"
+                      "**精选要求**：留言至少10字符，支持附件+文字",
                 inline=False
             )
             
