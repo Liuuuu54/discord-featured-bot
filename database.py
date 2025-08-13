@@ -319,7 +319,10 @@ class DatabaseManager:
             for row in results
         ]
         
-        return records, total_count
+        # 計算總頁數
+        total_pages = (total_count + per_page - 1) // per_page
+        
+        return records, total_pages
 
     def get_current_month(self) -> str:
         """获取当前年月"""

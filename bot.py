@@ -101,10 +101,13 @@ class FeaturedRecordsView(discord.ui.View):
             thread_title = None
             try:
                 channel = self.bot.get_channel(record['thread_id'])
-                if channel and hasattr(channel, 'name'):
+                if channel and hasattr(channel, 'name') and channel.name:
                     thread_title = channel.name
-            except:
-                pass
+                else:
+                    thread_title = f"帖子 {record['thread_id']}"
+            except Exception as e:
+                thread_title = f"帖子 {record['thread_id']}"
+                logger.debug(f"無法獲取帖子標題 {record['thread_id']}: {e}")
             
             # 創建記錄描述
             description = f"📝 **精选原因**: {record['reason'] or '无'}\n"
