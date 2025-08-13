@@ -54,37 +54,50 @@ class FeaturedMessageBot(commands.Bot):
 
 class FeaturedRecordsView(discord.ui.View):
     """精選記錄分頁視圖"""
-    def __init__(self, bot: FeaturedMessageBot, user_id: int, guild_id: int, current_page: int = 1):
+    def __init__(self, bot: FeaturedMessageBot, user_id: int, guild_id: int, current_page: int = 1, record_type: str = "featured"):
         super().__init__(timeout=300)  # 5分鐘超時
         self.bot = bot
         self.user_id = user_id
         self.guild_id = guild_id
         self.current_page = current_page
         self.per_page = 5
+        self.record_type = record_type  # "featured" 或 "referral"
     
     async def get_records_embed(self) -> discord.Embed:
-        """獲取當前頁面的精選記錄嵌入訊息"""
-        # 獲取精選記錄數據
-        records, total_pages = self.bot.db.get_user_featured_records(
-            self.user_id, self.guild_id, self.current_page, self.per_page
-        )
-        
+        """獲取當前頁面的記錄嵌入訊息"""
         # 獲取用戶資訊
         user = self.bot.get_user(self.user_id)
         username = user.display_name if user else f"用戶 {self.user_id}"
         
+        if self.record_type == "featured":
+            # 獲取被精選記錄
+            records, total_pages = self.bot.db.get_user_featured_records(
+                self.user_id, self.guild_id, self.current_page, self.per_page
+            )
+            title = f"🏆 {username} 的被精選記錄"
+            description = f"被其他用戶精選的記錄 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            empty_description = "還沒有被精選的記錄"
+        else:
+            # 獲取引薦記錄（用戶精選別人的記錄）
+            records, total_pages = self.bot.db.get_user_referral_records(
+                self.user_id, self.guild_id, self.current_page, self.per_page
+            )
+            title = f"👥 {username} 的引薦記錄"
+            description = f"精選其他用戶的記錄 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            empty_description = "還沒有引薦記錄"
+        
         if not records:
             embed = discord.Embed(
-                        title=f"🏆 {username} 的精选记录",
-        description="还没有精选记录",
+                title=title,
+                description=empty_description,
                 color=0x00ff00,
                 timestamp=discord.utils.utcnow()
             )
             return embed
         
         embed = discord.Embed(
-            title=f"🏆 {username} 的精选记录",
-            description=f"第 {self.current_page} 頁，共 {total_pages} 頁",
+            title=title,
+            description=description,
             color=0x00ff00,
             timestamp=discord.utils.utcnow()
         )
@@ -110,9 +123,16 @@ class FeaturedRecordsView(discord.ui.View):
                 logger.debug(f"無法獲取帖子標題 {record['thread_id']}: {e}")
             
             # 創建記錄描述
-            description = f"📝 **精选原因**: {record['reason'] or '无'}\n"
-            description += f"👤 **精选者**: {record['featured_by_name']}\n"
-            description += f"📅 **精选时间**: {formatted_time}\n"
+            if self.record_type == "featured":
+                # 被精選記錄
+                description = f"📝 **精选原因**: {record['reason'] or '无'}\n"
+                description += f"👤 **精选者**: {record['featured_by_name']}\n"
+                description += f"📅 **精选时间**: {formatted_time}\n"
+            else:
+                # 引薦記錄
+                description = f"👤 **被精选用户**: {record['author_name']}\n"
+                description += f"📝 **精选原因**: {record['reason'] or '无'}\n"
+                description += f"📅 **精选时间**: {formatted_time}\n"
             
             # 使用帖子超連結
             if thread_title:
@@ -121,7 +141,7 @@ class FeaturedRecordsView(discord.ui.View):
                 description += f"🏷️ **原帖**: [點擊查看]({thread_link})"
             
             embed.add_field(
-                name=f"{i}. 精选记录",
+                name=f"{i}. {'被精选记录' if self.record_type == 'featured' else '引荐记录'}",
                 value=description,
                 inline=False
             )
@@ -157,9 +177,14 @@ class FeaturedRecordsView(discord.ui.View):
     
     @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        _, total_pages = self.bot.db.get_user_featured_records(
-            self.user_id, self.guild_id, self.current_page, self.per_page
-        )
+        if self.record_type == "featured":
+            _, total_pages = self.bot.db.get_user_featured_records(
+                self.user_id, self.guild_id, self.current_page, self.per_page
+            )
+        else:
+            _, total_pages = self.bot.db.get_user_referral_records(
+                self.user_id, self.guild_id, self.current_page, self.per_page
+            )
         
         if self.current_page < total_pages:
             self.current_page += 1
@@ -168,13 +193,38 @@ class FeaturedRecordsView(discord.ui.View):
     
     @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
     async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        _, total_pages = self.bot.db.get_user_featured_records(
-            self.user_id, self.guild_id, self.current_page, self.per_page
-        )
+        if self.record_type == "featured":
+            _, total_pages = self.bot.db.get_user_featured_records(
+                self.user_id, self.guild_id, self.current_page, self.per_page
+            )
+        else:
+            _, total_pages = self.bot.db.get_user_referral_records(
+                self.user_id, self.guild_id, self.current_page, self.per_page
+            )
         
         self.current_page = total_pages
         embed = await self.get_records_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="被精選", style=discord.ButtonStyle.success, emoji="🏆")
+    async def switch_to_featured(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.record_type != "featured":
+            self.record_type = "featured"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_records_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是被精選記錄模式", ephemeral=True)
+    
+    @discord.ui.button(label="引薦記錄", style=discord.ButtonStyle.success, emoji="👥")
+    async def switch_to_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.record_type != "referral":
+            self.record_type = "referral"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_records_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是引薦記錄模式", ephemeral=True)
 
 class EnhancedRankingView(discord.ui.View):
     """增强排行榜视图 - 支持积分排行和引荐人数排行切换，支持时间范围"""
@@ -323,7 +373,7 @@ class EnhancedRankingView(discord.ui.View):
         else:
             await interaction.response.send_message("✅ 當前已是積分排行模式", ephemeral=True)
     
-    @discord.ui.button(label="引薦排行", style=discord.ButtonStyle.secondary, emoji="👥")
+    @discord.ui.button(label="引薦排行", style=discord.ButtonStyle.success, emoji="👥")
     async def switch_to_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.ranking_type != "referral":
             self.ranking_type = "referral"
@@ -589,7 +639,7 @@ class ThreadStatsView(discord.ui.View):
         else:
             await interaction.response.send_message("✅ 當前已是時間排序模式", ephemeral=True)
     
-    @discord.ui.button(label="讚數排序", style=discord.ButtonStyle.secondary, emoji="👍")
+    @discord.ui.button(label="讚數排序", style=discord.ButtonStyle.success, emoji="👍")
     async def sort_by_reactions(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.sort_mode != "reactions":
             self.sort_mode = "reactions"
@@ -1314,8 +1364,8 @@ class FeaturedCommands(commands.Cog):
             user_id = user.id
             stats = self.db.get_user_stats(user_id, interaction.guild_id)
             
-            # 創建分頁視圖
-            view = FeaturedRecordsView(self.bot, user_id, interaction.guild_id, 1)
+            # 創建分頁視圖（默認顯示被精選記錄）
+            view = FeaturedRecordsView(self.bot, user_id, interaction.guild_id, 1, "featured")
             
             # 先準備好嵌入訊息，避免在發送回應後再調用異步方法
             embed = await view.get_records_embed()

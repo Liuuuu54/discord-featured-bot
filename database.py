@@ -324,6 +324,49 @@ class DatabaseManager:
         
         return records, total_pages
 
+    def get_user_referral_records(self, user_id: int, guild_id: int, page: int = 1, per_page: int = 5) -> Tuple[List[Dict], int]:
+        """获取用户在指定群组精選別人的记录（分页）"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        
+        # 获取总记录数
+        cursor.execute('''
+            SELECT COUNT(*) FROM featured_messages 
+            WHERE featured_by_id = ? AND guild_id = ?
+        ''', (user_id, guild_id))
+        total_count = cursor.fetchone()[0]
+        
+        # 计算偏移量
+        offset = (page - 1) * per_page
+        
+        # 获取分页数据
+        cursor.execute('''
+            SELECT thread_id, message_id, featured_at, author_name, reason
+            FROM featured_messages 
+            WHERE featured_by_id = ? AND guild_id = ?
+            ORDER BY featured_at DESC
+            LIMIT ? OFFSET ?
+        ''', (user_id, guild_id, per_page, offset))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        records = [
+            {
+                'thread_id': row[0],
+                'message_id': row[1],
+                'featured_at': row[2],
+                'author_name': row[3],
+                'reason': row[4]
+            }
+            for row in results
+        ]
+        
+        # 計算總頁數
+        total_pages = (total_count + per_page - 1) // per_page
+        
+        return records, total_pages
+
     def get_current_month(self) -> str:
         """获取当前年月"""
         return datetime.now().strftime('%Y-%m')
