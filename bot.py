@@ -49,7 +49,7 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /月排行, /鉴赏申请窗口')
+        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /鉴赏申请窗口')
         logger.info('=' * 50)
 
 class FeaturedRecordsView(discord.ui.View):
@@ -173,6 +173,163 @@ class FeaturedRecordsView(discord.ui.View):
         embed = await self.get_records_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
+class EnhancedRankingView(discord.ui.View):
+    """增强排行榜视图 - 支持积分排行和引荐人数排行切换，支持时间范围"""
+    def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1, ranking_type: str = "points", start_date: str = None, end_date: str = None):
+        super().__init__(timeout=300)  # 5分鐘超時
+        self.bot = bot
+        self.guild_id = guild_id
+        self.current_page = current_page
+        self.per_page = 20
+        self.ranking_type = ranking_type  # "points" 或 "referral"
+        self.start_date = start_date
+        self.end_date = end_date
+    
+    async def get_ranking_embed(self) -> discord.Embed:
+        """獲取當前頁面的排行榜嵌入訊息"""
+        if self.ranking_type == "points":
+            # 獲取積分排行榜數據
+            ranking_data, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
+            title = "🏆 總積分排行榜"
+            
+            # 根据时间范围调整描述
+            if self.start_date and self.end_date:
+                description = f"時間範圍: {self.start_date} 至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            elif self.start_date:
+                description = f"時間範圍: {self.start_date} 至今 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            elif self.end_date:
+                description = f"時間範圍: 開始至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            else:
+                description = f"所有時間的積分統計 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            
+            empty_description = "還沒有積分記錄"
+        else:
+            # 獲取引薦人數排行榜數據
+            ranking_data, total_pages = self.bot.db.get_referral_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
+            title = "👥 引薦人數排行榜"
+            
+            # 根据时间范围调整描述
+            if self.start_date and self.end_date:
+                description = f"時間範圍: {self.start_date} 至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            elif self.start_date:
+                description = f"時間範圍: {self.start_date} 至今 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            elif self.end_date:
+                description = f"時間範圍: 開始至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            else:
+                description = f"精選留言引薦統計 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            
+            empty_description = "還沒有引薦記錄"
+        
+        if not ranking_data:
+            embed = discord.Embed(
+                title=title,
+                description=empty_description,
+                color=0x00ff00,
+                timestamp=discord.utils.utcnow()
+            )
+            return embed
+        
+        # 計算當前頁的起始排名
+        start_rank = (self.current_page - 1) * self.per_page + 1
+        
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=0x00ff00,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        for i, rank_info in enumerate(ranking_data):
+            # 獲取用戶資訊
+            user = self.bot.get_user(rank_info['user_id'])
+            username = user.display_name if user else rank_info['username']
+            
+            # 計算實際排名
+            actual_rank = start_rank + i
+            
+            if self.ranking_type == "points":
+                value = f"積分: {rank_info['points']} 分"
+            else:
+                value = f"引薦人數: {rank_info['referral_count']} 人"
+            
+            embed.add_field(
+                name=f"{actual_rank}. {username}",
+                value=value,
+                inline=False
+            )
+        
+        # 更新按鈕狀態
+        self.update_buttons(total_pages)
+        
+        return embed
+    
+    def update_buttons(self, total_pages: int):
+        """更新按鈕狀態"""
+        # 第一頁按鈕
+        self.children[0].disabled = self.current_page <= 1
+        # 上一頁按鈕
+        self.children[1].disabled = self.current_page <= 1
+        # 下一頁按鈕
+        self.children[2].disabled = self.current_page >= total_pages
+        # 最後一頁按鈕
+        self.children[3].disabled = self.current_page >= total_pages
+    
+    @discord.ui.button(label="第一頁", style=discord.ButtonStyle.gray, emoji="⏮️")
+    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = 1
+        embed = await self.get_ranking_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="上一頁", style=discord.ButtonStyle.primary, emoji="◀️")
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 1:
+            self.current_page -= 1
+            embed = await self.get_ranking_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.ranking_type == "points":
+            _, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
+        else:
+            _, total_pages = self.bot.db.get_referral_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
+        
+        if self.current_page < total_pages:
+            self.current_page += 1
+            embed = await self.get_ranking_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
+    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.ranking_type == "points":
+            _, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
+        else:
+            _, total_pages = self.bot.db.get_referral_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
+        
+        self.current_page = total_pages
+        embed = await self.get_ranking_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="積分排行", style=discord.ButtonStyle.success, emoji="🏆")
+    async def switch_to_points(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.ranking_type != "points":
+            self.ranking_type = "points"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_ranking_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是積分排行模式", ephemeral=True)
+    
+    @discord.ui.button(label="引薦排行", style=discord.ButtonStyle.secondary, emoji="👥")
+    async def switch_to_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.ranking_type != "referral":
+            self.ranking_type = "referral"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_ranking_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是引薦排行模式", ephemeral=True)
+
 class TotalRankingView(discord.ui.View):
     """總排行榜分頁視圖"""
     def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1):
@@ -266,91 +423,18 @@ class TotalRankingView(discord.ui.View):
         embed = await self.get_ranking_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
-class MonthlyRankingView(discord.ui.View):
-    """月度排行榜分页视图"""
-    def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1):
-        super().__init__(timeout=300)  # 5分钟超时
-        self.bot = bot
-        self.guild_id = guild_id
-        self.current_page = current_page
-        self.per_page = 20
 
-    async def get_ranking_embed(self) -> discord.Embed:
-        """获取当前页的月度排行榜嵌入消息"""
-        ranking_data, total_pages = self.bot.db.get_monthly_ranking_paginated(self.guild_id, self.current_page, self.per_page)
-        current_month = self.bot.db.get_current_month()
-
-        if not ranking_data:
-            embed = discord.Embed(
-                title=f"🏆 {current_month} 月度积分排行榜",
-                description="本月还没有积分记录",
-                color=0x00ff00,
-                timestamp=discord.utils.utcnow()
-            )
-            return embed
-
-        start_rank = (self.current_page - 1) * self.per_page + 1
-        embed = discord.Embed(
-            title=f"🏆 {current_month} 月度积分排行榜",
-            description=f"本月活跃度排行 • 第 {self.current_page} 页，共 {total_pages} 页",
-            color=0x00ff00,
-            timestamp=discord.utils.utcnow()
-        )
-        for i, rank_info in enumerate(ranking_data):
-            user = self.bot.get_user(rank_info['user_id'])
-            username = user.display_name if user else rank_info['username']
-            actual_rank = start_rank + i
-            embed.add_field(
-                name=f"{actual_rank}. {username}",
-                value=f"积分: {rank_info['points']} 分",
-                inline=False
-            )
-        self.update_buttons(total_pages)
-        return embed
-
-    def update_buttons(self, total_pages: int):
-        self.children[0].disabled = self.current_page <= 1
-        self.children[1].disabled = self.current_page <= 1
-        self.children[2].disabled = self.current_page >= total_pages
-        self.children[3].disabled = self.current_page >= total_pages
-
-    @discord.ui.button(label="第一页", style=discord.ButtonStyle.gray, emoji="⏮️")
-    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.current_page = 1
-        embed = await self.get_ranking_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="上一页", style=discord.ButtonStyle.primary, emoji="◀️")
-    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.current_page > 1:
-            self.current_page -= 1
-            embed = await self.get_ranking_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="下一页", style=discord.ButtonStyle.primary, emoji="▶️")
-    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        _, total_pages = self.bot.db.get_monthly_ranking_paginated(self.guild_id, self.current_page, self.per_page)
-        if self.current_page < total_pages:
-            self.current_page += 1
-            embed = await self.get_ranking_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
-
-    @discord.ui.button(label="最后一页", style=discord.ButtonStyle.gray, emoji="⏭️")
-    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        _, total_pages = self.bot.db.get_monthly_ranking_paginated(self.guild_id, self.current_page, self.per_page)
-        self.current_page = total_pages
-        embed = await self.get_ranking_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
 
 class ThreadStatsView(discord.ui.View):
     """帖子統計分頁視圖"""
-    def __init__(self, bot: FeaturedMessageBot, thread_id: int, guild_id: int, current_page: int = 1):
+    def __init__(self, bot: FeaturedMessageBot, thread_id: int, guild_id: int, current_page: int = 1, sort_mode: str = "time"):
         super().__init__(timeout=300)  # 5分鐘超時
         self.bot = bot
         self.thread_id = thread_id
         self.guild_id = guild_id
         self.current_page = current_page
         self.per_page = 5
+        self.sort_mode = sort_mode  # "time" 或 "reactions"
     
     async def get_stats_embed(self) -> discord.Embed:
         """獲取當前頁面的統計嵌入訊息"""
@@ -366,6 +450,26 @@ class ThreadStatsView(discord.ui.View):
             )
             return embed
         
+        # 記錄開始時間
+        start_time = datetime.now()
+        
+        # 根據排序模式處理數據
+        if self.sort_mode == "reactions":
+            # 讚數排序：需要獲取所有消息的表情符號數量
+            stats_with_reactions = []
+            for stat in all_stats:
+                reaction_count = await self.get_message_reaction_count(stat['message_id'])
+                stats_with_reactions.append({
+                    **stat,
+                    'reaction_count': reaction_count
+                })
+            
+            # 按表情符號數量降序排序
+            all_stats = sorted(stats_with_reactions, key=lambda x: x['reaction_count'], reverse=True)
+        else:
+            # 時間排序：已經是默認的時間排序（精選時間）
+            pass
+        
         # 計算分頁
         total_records = len(all_stats)
         total_pages = (total_records + self.per_page - 1) // self.per_page
@@ -373,15 +477,20 @@ class ThreadStatsView(discord.ui.View):
         end_idx = min(start_idx + self.per_page, total_records)
         current_stats = all_stats[start_idx:end_idx]
         
+        # 根據排序模式設置標題和描述
+        if self.sort_mode == "reactions":
+            title = "📊 帖子精选统计 (按讚數排序)"
+            description = f"共 {total_records} 条精选记录 • 第 {self.current_page} 页，共 {total_pages} 页 • 按讚數排序"
+        else:
+            title = "📊 帖子精选统计 (按時間排序)"
+            description = f"共 {total_records} 条精选记录 • 第 {self.current_page} 页，共 {total_pages} 页 • 按精選時間排序"
+        
         embed = discord.Embed(
-            title="📊 帖子精选统计",
-            description=f"共 {total_records} 条精选记录 • 第 {self.current_page} 页，共 {total_pages} 页",
+            title=title,
+            description=description,
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow()
         )
-        
-        # 記錄開始時間
-        start_time = datetime.now()
         
         for i, stat in enumerate(current_stats, start_idx + 1):
             # 格式化時間
@@ -417,7 +526,7 @@ class ThreadStatsView(discord.ui.View):
         
         # 計算並記錄處理時間
         processing_time = (datetime.now() - start_time).total_seconds()
-        logger.info(f"📊 帖子統計處理完成 - 頁面 {self.current_page}, 處理 {len(current_stats)} 條記錄, 耗時 {processing_time:.2f}秒")
+        logger.info(f"📊 帖子統計處理完成 - 頁面 {self.current_page}, 排序模式: {self.sort_mode}, 處理 {len(current_stats)} 條記錄, 耗時 {processing_time:.2f}秒")
         
         # 更新按鈕狀態
         self.update_buttons(total_pages)
@@ -466,7 +575,27 @@ class ThreadStatsView(discord.ui.View):
         self.current_page = total_pages
         embed = await self.get_stats_embed()
         await interaction.response.edit_message(embed=embed, view=self)
-        
+    
+    @discord.ui.button(label="時間排序", style=discord.ButtonStyle.success, emoji="⏰")
+    async def sort_by_time(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.sort_mode != "time":
+            self.sort_mode = "time"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_stats_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是時間排序模式", ephemeral=True)
+    
+    @discord.ui.button(label="讚數排序", style=discord.ButtonStyle.secondary, emoji="👍")
+    async def sort_by_reactions(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.sort_mode != "reactions":
+            self.sort_mode = "reactions"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_stats_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是讚數排序模式", ephemeral=True)
+    
     async def get_records_embed(self) -> discord.Embed:
         """獲取當前頁面的記錄嵌入訊息"""
         records, total_pages = self.bot.db.get_user_featured_records(
@@ -1104,11 +1233,15 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
                 
-    @app_commands.command(name="总排行", description="查看总积分排行榜（仅管理组可用）")
-    async def total_ranking(self, interaction: discord.Interaction):
-        """查看總積分排行榜命令（僅管理組可用）"""
+    @app_commands.command(name="总排行", description="查看总积分排行榜和引荐人数排行榜（仅管理组可用，支持时间范围）")
+    @app_commands.describe(
+        start_date="起始日期（可选，格式：YYYY-MM-DD，例如：2024-01-01）",
+        end_date="结束日期（可选，格式：YYYY-MM-DD，例如：2024-12-31）"
+    )
+    async def total_ranking(self, interaction: discord.Interaction, start_date: str = None, end_date: str = None):
+        """查看總排行榜命令（僅管理組可用）- 支持積分排行和引薦人數排行切換，支持時間範圍"""
         # 记录命令使用
-        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了總排行榜")
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了總排行榜，时间范围: {start_date} 至 {end_date}")
         
         try:
             # 檢查是否為管理組（檢查特定角色或權限）
@@ -1130,8 +1263,23 @@ class FeaturedCommands(commands.Cog):
                 await interaction.response.send_message("❌ 此命令僅限管理組使用！", ephemeral=True)
                 return
             
-            # 創建分頁視圖
-            view = TotalRankingView(self.bot, interaction.guild_id, 1)
+            # 验证日期格式
+            if start_date:
+                try:
+                    datetime.strptime(start_date, '%Y-%m-%d')
+                except ValueError:
+                    await interaction.response.send_message("❌ 起始日期格式錯誤！請使用 YYYY-MM-DD 格式，例如：2024-01-01", ephemeral=True)
+                    return
+            
+            if end_date:
+                try:
+                    datetime.strptime(end_date, '%Y-%m-%d')
+                except ValueError:
+                    await interaction.response.send_message("❌ 結束日期格式錯誤！請使用 YYYY-MM-DD 格式，例如：2024-12-31", ephemeral=True)
+                    return
+            
+            # 創建增強排行榜視圖（預設為積分排行）
+            view = EnhancedRankingView(self.bot, interaction.guild_id, 1, "points", start_date, end_date)
             
             # 獲取嵌入訊息
             embed = await view.get_ranking_embed()
@@ -1210,8 +1358,8 @@ class FeaturedCommands(commands.Cog):
             
             thread_id = interaction.channel.id
             
-            # 創建分頁視圖
-            view = ThreadStatsView(self.bot, thread_id, interaction.guild_id, 1)
+            # 創建分頁視圖（默認時間排序）
+            view = ThreadStatsView(self.bot, thread_id, interaction.guild_id, 1, "time")
             
             # 獲取嵌入訊息
             embed = await view.get_stats_embed()
@@ -1231,38 +1379,7 @@ class FeaturedCommands(commands.Cog):
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
                 # 如果連 followup 都失敗，就記錄錯誤但不拋出異常
     
-    @app_commands.command(name="月排行", description="查看本月活跃度排行榜（仅管理组可用）")
-    async def monthly_ranking(self, interaction: discord.Interaction):
-        """查看月度积分排行榜命令（仅管理组可用）"""
-        # 记录命令使用
-        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了月排行")
-        try:
-            # 检查是否为管理组（检查特定角色或权限）
-            has_admin_role = False
-            for role in interaction.user.roles:
-                if role.name in config.ADMIN_ROLE_NAMES:
-                    has_admin_role = True
-                    logger.info(f"✅ 用户 {interaction.user.name} 通过角色 '{role.name}' 获得管理权限")
-                    break
-            if not has_admin_role:
-                has_admin_role = interaction.user.guild_permissions.manage_messages or \
-                                interaction.user.guild_permissions.administrator
-            if not has_admin_role:
-                await interaction.response.send_message("❌ 此命令仅限管理组使用！", ephemeral=True)
-                return
-            # 创建分页视图
-            view = MonthlyRankingView(self.bot, interaction.guild_id, 1)
-            embed = await view.get_ranking_embed()
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        except Exception as e:
-            logger.error(f"查看月排行时发生错误: {e}")
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 查看月排行时发生错误，请稍后重试。", ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ 查看月排行时发生错误，请稍后重试。", ephemeral=True)
-            except Exception as followup_error:
-                logger.error(f"发送错误消息时发生错误: {followup_error}")
+
 
     @app_commands.command(name="鉴赏申请窗口", description="创建鉴赏家申请窗口（仅管理组可用）")
     async def create_appreciator_window(self, interaction: discord.Interaction):

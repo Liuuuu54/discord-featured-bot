@@ -387,13 +387,27 @@ class DatabaseManager:
             for row in results
         ]
     
-    def get_total_ranking(self, guild_id: int, page: int = 1, per_page: int = 20) -> Tuple[List[Dict], int]:
-        """获取指定群组的总积分排行榜（分页）"""
+    def get_total_ranking(self, guild_id: int, page: int = 1, per_page: int = 20, start_date: str = None, end_date: str = None) -> Tuple[List[Dict], int]:
+        """获取指定群组的总积分排行榜（分页，支持时间范围）"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
+        # 构建查询条件
+        where_conditions = ["guild_id = ?"]
+        params = [guild_id]
+        
+        if start_date:
+            where_conditions.append("created_at >= ?")
+            params.append(start_date)
+        
+        if end_date:
+            where_conditions.append("created_at <= ?")
+            params.append(end_date)
+        
+        where_clause = " AND ".join(where_conditions)
+        
         # 获取总记录数
-        cursor.execute('SELECT COUNT(*) FROM user_points WHERE guild_id = ?', (guild_id,))
+        cursor.execute(f'SELECT COUNT(*) FROM user_points WHERE {where_clause}', params)
         total_records = cursor.fetchone()[0]
         
         # 计算总页数
@@ -401,13 +415,13 @@ class DatabaseManager:
         
         # 获取当前页数据
         offset = (page - 1) * per_page
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT user_id, username, points
             FROM user_points 
-            WHERE guild_id = ?
+            WHERE {where_clause}
             ORDER BY points DESC
             LIMIT ? OFFSET ?
-        ''', (guild_id, per_page, offset))
+        ''', params + [per_page, offset])
         
         results = cursor.fetchall()
         conn.close()
@@ -498,3 +512,82 @@ class DatabaseManager:
             }
             for row in results
         ], total_pages 
+
+    def get_referral_ranking(self, guild_id: int, page: int = 1, per_page: int = 20, start_date: str = None, end_date: str = None) -> Tuple[List[Dict], int]:
+        """获取指定群组的引荐人数排行榜（分页，支持时间范围）"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        
+        # 构建查询条件
+        where_conditions = ["guild_id = ?"]
+        params = [guild_id]
+        
+        if start_date:
+            where_conditions.append("featured_at >= ?")
+            params.append(start_date)
+        
+        if end_date:
+            where_conditions.append("featured_at <= ?")
+            params.append(end_date)
+        
+        where_clause = " AND ".join(where_conditions)
+        
+        # 获取总记录数（有引荐记录的用户数量）
+        cursor.execute(f'''
+            SELECT COUNT(DISTINCT featured_by_id) 
+            FROM featured_messages 
+            WHERE {where_clause}
+        ''', params)
+        total_records = cursor.fetchone()[0]
+        
+        # 计算总页数
+        total_pages = (total_records + per_page - 1) // per_page
+        
+        # 获取当前页数据
+        offset = (page - 1) * per_page
+        cursor.execute(f'''
+            SELECT 
+                featured_by_id,
+                COUNT(DISTINCT author_id) as referral_count
+            FROM featured_messages 
+            WHERE {where_clause}
+            GROUP BY featured_by_id
+            ORDER BY referral_count DESC
+            LIMIT ? OFFSET ?
+        ''', params + [per_page, offset])
+        
+        results = cursor.fetchall()
+        
+        # 获取用户名
+        ranking_data = []
+        for row in results:
+            user_id = row[0]
+            referral_count = row[1]
+            
+            # 获取用户名（从user_points表或featured_messages表）
+            cursor.execute('''
+                SELECT username FROM user_points 
+                WHERE user_id = ? AND guild_id = ?
+            ''', (user_id, guild_id))
+            username_result = cursor.fetchone()
+            
+            if username_result:
+                username = username_result[0]
+            else:
+                # 如果user_points表中没有，从featured_messages表获取
+                cursor.execute('''
+                    SELECT featured_by_name FROM featured_messages 
+                    WHERE featured_by_id = ? AND guild_id = ?
+                    LIMIT 1
+                ''', (user_id, guild_id))
+                name_result = cursor.fetchone()
+                username = name_result[0] if name_result else f"用户{user_id}"
+            
+            ranking_data.append({
+                'user_id': user_id,
+                'username': username,
+                'referral_count': referral_count
+            })
+        
+        conn.close()
+        return ranking_data, total_pages 
