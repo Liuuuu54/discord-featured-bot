@@ -49,8 +49,52 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /鉴赏申请窗口, /全服精选')
+        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /鉴赏申请窗口, /全服精选列表')
         logger.info('=' * 50)
+    
+    async def on_command_error(self, ctx, error):
+        """处理命令错误"""
+        if isinstance(error, commands.CommandNotFound):
+            # 忽略不存在的命令错误，不记录日志
+            return
+        
+        # 记录其他类型的错误
+        logger.error(f"命令执行错误: {error}")
+        
+        # 发送用户友好的错误消息
+        try:
+            if isinstance(error, commands.MissingPermissions):
+                await ctx.send("❌ 您没有权限执行此命令！", delete_after=5)
+            elif isinstance(error, commands.BotMissingPermissions):
+                await ctx.send("❌ 机器人缺少必要的权限！", delete_after=5)
+            elif isinstance(error, commands.CommandOnCooldown):
+                await ctx.send(f"⏰ 命令冷却中，请等待 {error.retry_after:.1f} 秒后重试", delete_after=5)
+            else:
+                await ctx.send("❌ 命令执行时发生错误，请稍后重试", delete_after=5)
+        except Exception as e:
+            logger.error(f"发送错误消息失败: {e}")
+    
+    async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        """处理斜杠命令错误"""
+        if isinstance(error, app_commands.CommandNotFound):
+            # 忽略不存在的斜杠命令错误，不记录日志
+            return
+        
+        # 记录其他类型的错误
+        logger.error(f"斜杠命令执行错误: {error}")
+        
+        # 发送用户友好的错误消息
+        try:
+            if isinstance(error, app_commands.MissingPermissions):
+                await interaction.response.send_message("❌ 您没有权限执行此命令！", ephemeral=True)
+            elif isinstance(error, app_commands.BotMissingPermissions):
+                await interaction.response.send_message("❌ 机器人缺少必要的权限！", ephemeral=True)
+            elif isinstance(error, app_commands.CommandOnCooldown):
+                await interaction.response.send_message(f"⏰ 命令冷却中，请等待 {error.retry_after:.1f} 秒后重试", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ 命令执行时发生错误，请稍后重试", ephemeral=True)
+        except Exception as e:
+            logger.error(f"发送斜杠命令错误消息失败: {e}")
 
 class FeaturedRecordsView(discord.ui.View):
     """精選記錄分頁視圖"""
@@ -1846,7 +1890,7 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
 
-    @app_commands.command(name="全服精选", description="查看全服精選留言（仅管理组可用，支持时间范围和时间/讚数排序）")
+    @app_commands.command(name="全服精选列表", description="查看全服精選留言列表（仅管理组可用，支持时间范围和时间/讚数排序）")
     @app_commands.describe(
         start_date="起始日期（可选，格式：YYYY-MM-DD，例如：2024-01-01）",
         end_date="结束日期（可选，格式：YYYY-MM-DD，例如：2024-12-31）"
