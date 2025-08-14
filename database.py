@@ -637,3 +637,71 @@ class DatabaseManager:
         
         conn.close()
         return ranking_data, total_pages 
+
+    def get_all_featured_messages(self, guild_id: int, page: int = 1, per_page: int = 10, 
+                                 sort_by: str = "time", start_date: str = None, end_date: str = None) -> Tuple[List[Dict], int]:
+        """获取全服精選留言数据（分页，支持时间范围和时间/讚数排序）"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        
+        # 构建查询条件
+        where_conditions = ["guild_id = ?"]
+        params = [guild_id]
+        
+        if start_date:
+            where_conditions.append("featured_at >= ?")
+            params.append(start_date)
+        
+        if end_date:
+            where_conditions.append("featured_at <= ?")
+            params.append(end_date)
+        
+        where_clause = " AND ".join(where_conditions)
+        
+        # 获取总记录数
+        cursor.execute(f'SELECT COUNT(*) FROM featured_messages WHERE {where_clause}', params)
+        total_records = cursor.fetchone()[0]
+        
+        # 计算总页数
+        total_pages = (total_records + per_page - 1) // per_page
+        
+        # 确定排序方式
+        if sort_by == "reactions":
+            # 讚数排序（这里先按时间排序，讚数会在应用层处理）
+            order_clause = "featured_at DESC"
+        else:
+            # 时间排序（默认）
+            order_clause = "featured_at DESC"
+        
+        # 获取当前页数据
+        offset = (page - 1) * per_page
+        cursor.execute(f'''
+            SELECT 
+                id, thread_id, message_id, author_id, author_name, 
+                featured_by_id, featured_by_name, featured_at, reason
+            FROM featured_messages 
+            WHERE {where_clause}
+            ORDER BY {order_clause}
+            LIMIT ? OFFSET ?
+        ''', params + [per_page, offset])
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        # 转换为字典格式
+        messages = [
+            {
+                'id': row[0],
+                'thread_id': row[1],
+                'message_id': row[2],
+                'author_id': row[3],
+                'author_name': row[4],
+                'featured_by_id': row[5],
+                'featured_by_name': row[6],
+                'featured_at': row[7],
+                'reason': row[8]
+            }
+            for row in results
+        ]
+        
+        return messages, total_pages 

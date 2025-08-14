@@ -49,7 +49,7 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /鉴赏申请窗口')
+        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /鉴赏申请窗口, /全服精选')
         logger.info('=' * 50)
 
 class FeaturedRecordsView(discord.ui.View):
@@ -649,81 +649,6 @@ class ThreadStatsView(discord.ui.View):
         else:
             await interaction.response.send_message("✅ 當前已是讚數排序模式", ephemeral=True)
     
-    async def get_records_embed(self) -> discord.Embed:
-        """獲取當前頁面的記錄嵌入訊息"""
-        records, total_pages = self.bot.db.get_user_featured_records(
-            self.user_id, self.guild_id, self.current_page, self.per_page
-        )
-        
-        # 獲取用戶資訊
-        user = self.bot.get_user(self.user_id)
-        if user:
-            username = user.display_name
-        else:
-            # 如果用戶不在快取中，嘗試從資料庫獲取用戶名
-            try:
-                stats = self.bot.db.get_user_stats(self.user_id, self.guild_id)
-                username = stats['username'] if stats['username'] else f"用戶{self.user_id}"
-            except:
-                username = f"用戶{self.user_id}"
-        
-        embed = discord.Embed(
-            title=f"📊 {username} 的精选记录",
-            description=f"第 {self.current_page} 頁，共 {total_pages} 頁",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow()
-        )
-        
-        if not records:
-            embed.add_field(
-                name="📝 記錄",
-                value="還沒有被精選的記錄",
-                inline=False
-            )
-        else:
-            for i, record in enumerate(records, 1):
-                # 格式化時間
-                try:
-                    featured_time = datetime.fromisoformat(record['featured_at'].replace('Z', '+00:00'))
-                    formatted_time = featured_time.strftime("%Y-%m-%d %H:%M")
-                except:
-                    formatted_time = record['featured_at']
-                
-                # 創建連結
-                thread_link = f"https://discord.com/channels/{self.guild_id}/{record['thread_id']}"
-                message_link = f"https://discord.com/channels/{self.guild_id}/{record['thread_id']}/{record['message_id']}"
-                
-                # 嘗試獲取帖子標題
-                try:
-                    thread_title = await self.get_thread_title(record['thread_id'])
-                except Exception:
-                    thread_title = None
-                
-                # 構建記錄內容
-                if thread_title:
-                    record_content = f"**原帖**: [{thread_title}]({thread_link})\n"
-                else:
-                    record_content = f"**原帖**: [點擊查看]({thread_link})\n"
-                
-                record_content += f"**精选留言**: [点击查看]({message_link})\n"
-                record_content += f"**精选者**: {record['featured_by_name']}\n"
-                record_content += f"**時間**: {formatted_time}"
-                
-                # 如果有精选原因，添加到内容中
-                if record['reason']:
-                    record_content += f"\n**精选原因**: {record['reason']}"
-                
-                embed.add_field(
-                    name=f"{i}. 精选记录",
-                    value=record_content,
-                    inline=False
-                )
-        
-        # 更新按鈕狀態
-        self.update_buttons(total_pages)
-        
-        return embed
-    
     async def get_message_reaction_count(self, message_id: int) -> int:
         """獲取消息的最高表情符號數量（帶緩存）"""
         # 簡單的內存緩存，避免短時間內重複請求
@@ -737,6 +662,229 @@ class ThreadStatsView(discord.ui.View):
         try:
             # 獲取消息對象
             message = await self.bot.get_channel(self.thread_id).fetch_message(message_id)
+            
+            if not message or not message.reactions:
+                return 0
+            
+            # 計算所有表情符號中的最高數量
+            max_count = 0
+            for reaction in message.reactions:
+                if reaction.count > max_count:
+                    max_count = reaction.count
+            
+            # 緩存結果
+            if not hasattr(self, '_reaction_cache'):
+                self._reaction_cache = {}
+            self._reaction_cache[cache_key] = (datetime.now(), max_count)
+            
+            return max_count
+            
+        except Exception as e:
+            # 如果無法獲取消息或表情符號，返回 0
+            logger.debug(f"無法獲取消息 {message_id} 的表情符號: {e}")
+            return 0
+
+class AllFeaturedMessagesView(discord.ui.View):
+    """全服精選留言分頁視圖"""
+    def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1, 
+                 sort_mode: str = "time", start_date: str = None, end_date: str = None):
+        super().__init__(timeout=300)  # 5分鐘超時
+        self.bot = bot
+        self.guild_id = guild_id
+        self.current_page = current_page
+        self.per_page = 10  # 每頁顯示10個
+        self.sort_mode = sort_mode  # "time" 或 "reactions"
+        self.start_date = start_date
+        self.end_date = end_date
+    
+    async def get_messages_embed(self) -> discord.Embed:
+        """獲取當前頁面的全服精選留言嵌入訊息"""
+        # 記錄開始時間
+        start_time = datetime.now()
+        
+        # 獲取精選留言數據
+        messages, total_pages = self.bot.db.get_all_featured_messages(
+            self.guild_id, self.current_page, self.per_page, 
+            self.sort_mode, self.start_date, self.end_date
+        )
+        
+        if not messages:
+            embed = discord.Embed(
+                title="🌟 全服精選留言",
+                description="目前沒有精選留言記錄",
+                color=discord.Color.light_grey(),
+                timestamp=discord.utils.utcnow()
+            )
+            return embed
+        
+        # 根據排序模式處理數據
+        if self.sort_mode == "reactions":
+            # 讚數排序：需要獲取所有消息的表情符號數量
+            messages_with_reactions = []
+            for msg in messages:
+                reaction_count = await self.get_message_reaction_count(msg['thread_id'], msg['message_id'])
+                messages_with_reactions.append({
+                    **msg,
+                    'reaction_count': reaction_count
+                })
+            
+            # 按表情符號數量降序排序
+            messages = sorted(messages_with_reactions, key=lambda x: x['reaction_count'], reverse=True)
+        
+        # 根據排序模式設置標題和描述
+        if self.sort_mode == "reactions":
+            title = "🌟 全服精選留言 (按讚數排序)"
+            description = f"共 {len(messages)} 条精选记录 • 第 {self.current_page} 页，共 {total_pages} 页 • 按讚數排序"
+        else:
+            title = "🌟 全服精選留言 (按時間排序)"
+            description = f"共 {len(messages)} 条精选记录 • 第 {self.current_page} 页，共 {total_pages} 页 • 按精選時間排序"
+        
+        # 添加時間範圍信息
+        if self.start_date or self.end_date:
+            time_range = "時間範圍: "
+            if self.start_date and self.end_date:
+                time_range += f"{self.start_date} 至 {self.end_date}"
+            elif self.start_date:
+                time_range += f"{self.start_date} 至今"
+            elif self.end_date:
+                time_range += f"開始至 {self.end_date}"
+            description += f"\n{time_range}"
+        
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        for i, msg in enumerate(messages, 1):
+            # 格式化時間
+            try:
+                featured_time = datetime.fromisoformat(msg['featured_at'].replace('Z', '+00:00'))
+                formatted_time = featured_time.strftime("%Y-%m-%d %H:%M")
+            except:
+                formatted_time = msg['featured_at']
+            
+            # 創建留言連結
+            message_link = f"https://discord.com/channels/{self.guild_id}/{msg['thread_id']}/{msg['message_id']}"
+            
+            # 嘗試獲取帖子標題
+            thread_title = await self.get_thread_title(msg['thread_id'])
+            
+            # 構建記錄內容
+            record_content = f"**作者**: {msg['author_name']}\n"
+            record_content += f"**精选者**: {msg['featured_by_name']}\n"
+            record_content += f"**時間**: {formatted_time}\n"
+            
+            # 添加表情符號統計（如果是讚數排序模式）
+            if self.sort_mode == "reactions" and 'reaction_count' in msg:
+                record_content += f"**👍 最高表情數**: {msg['reaction_count']}\n"
+            
+            # 如果有精选原因，添加到内容中
+            if msg.get('reason'):
+                record_content += f"**精选原因**: {msg['reason']}\n"
+            
+            # 添加留言連結
+            if thread_title:
+                record_content += f"**原帖**: [{thread_title}]({message_link})"
+            else:
+                record_content += f"**留言連結**: [点击查看]({message_link})"
+            
+            embed.add_field(
+                name=f"{i}. 精选留言",
+                value=record_content,
+                inline=False
+            )
+        
+        # 計算並記錄處理時間
+        processing_time = (datetime.now() - start_time).total_seconds()
+        logger.info(f"🌟 全服精選留言處理完成 - 頁面 {self.current_page}, 排序模式: {self.sort_mode}, 處理 {len(messages)} 條記錄, 耗時 {processing_time:.2f}秒")
+        
+        # 更新按鈕狀態
+        self.update_buttons(total_pages)
+        
+        return embed
+    
+    def update_buttons(self, total_pages: int):
+        """更新按鈕狀態"""
+        # 第一頁按鈕
+        self.children[0].disabled = self.current_page <= 1
+        # 上一頁按鈕
+        self.children[1].disabled = self.current_page <= 1
+        # 下一頁按鈕
+        self.children[2].disabled = self.current_page >= total_pages
+        # 最後一頁按鈕
+        self.children[3].disabled = self.current_page >= total_pages
+    
+    @discord.ui.button(label="第一頁", style=discord.ButtonStyle.gray, emoji="⏮️")
+    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page = 1
+        embed = await self.get_messages_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="上一頁", style=discord.ButtonStyle.primary, emoji="◀️")
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 1:
+            self.current_page -= 1
+            embed = await self.get_messages_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        messages, total_pages = self.bot.db.get_all_featured_messages(
+            self.guild_id, self.current_page, self.per_page, 
+            self.sort_mode, self.start_date, self.end_date
+        )
+        
+        if self.current_page < total_pages:
+            self.current_page += 1
+            embed = await self.get_messages_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
+    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        messages, total_pages = self.bot.db.get_all_featured_messages(
+            self.guild_id, self.current_page, self.per_page, 
+            self.sort_mode, self.start_date, self.end_date
+        )
+        
+        self.current_page = total_pages
+        embed = await self.get_messages_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="時間排序", style=discord.ButtonStyle.success, emoji="⏰")
+    async def sort_by_time(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.sort_mode != "time":
+            self.sort_mode = "time"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_messages_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是時間排序模式", ephemeral=True)
+    
+    @discord.ui.button(label="讚數排序", style=discord.ButtonStyle.success, emoji="👍")
+    async def sort_by_reactions(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.sort_mode != "reactions":
+            self.sort_mode = "reactions"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_messages_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是讚數排序模式", ephemeral=True)
+    
+    async def get_message_reaction_count(self, thread_id: int, message_id: int) -> int:
+        """獲取消息的最高表情符號數量（帶緩存）"""
+        # 簡單的內存緩存，避免短時間內重複請求
+        cache_key = f"{thread_id}_{message_id}"
+        if hasattr(self, '_reaction_cache') and cache_key in self._reaction_cache:
+            cache_time, count = self._reaction_cache[cache_key]
+            # 緩存5秒
+            if (datetime.now() - cache_time).total_seconds() < 5:
+                return count
+        
+        try:
+            # 獲取消息對象
+            message = await self.bot.get_channel(thread_id).fetch_message(message_id)
             
             if not message or not message.reactions:
                 return 0
@@ -773,6 +921,127 @@ class ThreadStatsView(discord.ui.View):
         except Exception:
             # 如果無法獲取帖子標題，返回 None
             return None
+
+class AllFeaturedMessagesView(discord.ui.View):
+    """全服精選留言分頁視圖"""
+    def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1, 
+                 sort_mode: str = "time", start_date: str = None, end_date: str = None):
+        super().__init__(timeout=300)  # 5分鐘超時
+        self.bot = bot
+        self.guild_id = guild_id
+        self.current_page = current_page
+        self.per_page = 10  # 每頁顯示10個
+        self.sort_mode = sort_mode  # "time" 或 "reactions"
+        self.start_date = start_date
+        self.end_date = end_date
+    
+    async def get_messages_embed(self) -> discord.Embed:
+        """獲取當前頁面的全服精選留言嵌入訊息"""
+        # 記錄開始時間
+        start_time = datetime.now()
+        
+        # 獲取精選留言數據
+        messages, total_pages = self.bot.db.get_all_featured_messages(
+            self.guild_id, self.current_page, self.per_page, 
+            self.sort_mode, self.start_date, self.end_date
+        )
+        
+        if not messages:
+            embed = discord.Embed(
+                title="🌟 全服精選留言",
+                description="目前沒有精選留言記錄",
+                color=discord.Color.light_grey(),
+                timestamp=discord.utils.utcnow()
+            )
+            return embed
+        
+        # 根據排序模式處理數據
+        if self.sort_mode == "reactions":
+            # 讚數排序：需要獲取所有消息的表情符號數量
+            messages_with_reactions = []
+            for msg in messages:
+                reaction_count = await self.get_message_reaction_count(msg['thread_id'], msg['message_id'])
+                messages_with_reactions.append({
+                    **msg,
+                    'reaction_count': reaction_count
+                })
+            
+            # 按表情符號數量降序排序
+            messages = sorted(messages_with_reactions, key=lambda x: x['reaction_count'], reverse=True)
+        
+        # 根據排序模式設置標題和描述
+        if self.sort_mode == "reactions":
+            title = "🌟 全服精選留言 (按讚數排序)"
+            description = f"共 {len(messages)} 条精选记录 • 第 {self.current_page} 页，共 {total_pages} 页 • 按讚數排序"
+        else:
+            title = "🌟 全服精選留言 (按時間排序)"
+            description = f"共 {len(messages)} 条精选记录 • 第 {self.current_page} 页，共 {total_pages} 页 • 按精選時間排序"
+        
+        # 添加時間範圍信息
+        if self.start_date or self.end_date:
+            time_range = "時間範圍: "
+            if self.start_date and self.end_date:
+                time_range += f"{self.start_date} 至 {self.end_date}"
+            elif self.start_date:
+                time_range += f"{self.start_date} 至今"
+            elif self.end_date:
+                time_range += f"開始至 {self.end_date}"
+            description += f"\n{time_range}"
+        
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        for i, msg in enumerate(messages, 1):
+            # 格式化時間
+            try:
+                featured_time = datetime.fromisoformat(msg['featured_at'].replace('Z', '+00:00'))
+                formatted_time = featured_time.strftime("%Y-%m-%d %H:%M")
+            except:
+                formatted_time = msg['featured_at']
+            
+            # 創建留言連結
+            message_link = f"https://discord.com/channels/{self.guild_id}/{msg['thread_id']}/{msg['message_id']}"
+            
+            # 嘗試獲取帖子標題
+            thread_title = await self.get_thread_title(msg['thread_id'])
+            
+            # 構建記錄內容
+            record_content = f"**作者**: {msg['author_name']}\n"
+            record_content += f"**精选者**: {msg['featured_by_name']}\n"
+            record_content += f"**時間**: {formatted_time}\n"
+            
+            # 添加表情符號統計（如果是讚數排序模式）
+            if self.sort_mode == "reactions" and 'reaction_count' in msg:
+                record_content += f"**👍 最高表情數**: {msg['reaction_count']}\n"
+            
+            # 如果有精选原因，添加到内容中
+            if msg.get('reason'):
+                record_content += f"**精选原因**: {msg['reason']}\n"
+            
+            # 添加留言連結
+            if thread_title:
+                record_content += f"**原帖**: [{thread_title}]({message_link})"
+            else:
+                record_content += f"**留言連結**: [点击查看]({message_link})"
+            
+            embed.add_field(
+                name=f"{i}. 精选留言",
+                value=record_content,
+                inline=False
+            )
+        
+        # 計算並記錄處理時間
+        processing_time = (datetime.now() - start_time).total_seconds()
+        logger.info(f"🌟 全服精選留言處理完成 - 頁面 {self.current_page}, 排序模式: {self.sort_mode}, 處理 {len(messages)} 條記錄, 耗時 {processing_time:.2f}秒")
+        
+        # 更新按鈕狀態
+        self.update_buttons(total_pages)
+        
+        return embed
     
     def update_buttons(self, total_pages: int):
         """更新按鈕狀態"""
@@ -788,36 +1057,108 @@ class ThreadStatsView(discord.ui.View):
     @discord.ui.button(label="第一頁", style=discord.ButtonStyle.gray, emoji="⏮️")
     async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page = 1
-        embed = await self.get_records_embed()
+        embed = await self.get_messages_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="上一頁", style=discord.ButtonStyle.primary, emoji="◀️")
     async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current_page > 1:
             self.current_page -= 1
-            embed = await self.get_records_embed()
+            embed = await self.get_messages_embed()
             await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        records, total_pages = self.bot.db.get_user_featured_records(
-            self.user_id, self.guild_id, self.current_page, self.per_page
+        messages, total_pages = self.bot.db.get_all_featured_messages(
+            self.guild_id, self.current_page, self.per_page, 
+            self.sort_mode, self.start_date, self.end_date
         )
         
         if self.current_page < total_pages:
             self.current_page += 1
-            embed = await self.get_records_embed()
+            embed = await self.get_messages_embed()
             await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
     async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        records, total_pages = self.bot.db.get_user_featured_records(
-            self.user_id, self.guild_id, self.current_page, self.per_page
+        messages, total_pages = self.bot.db.get_all_featured_messages(
+            self.guild_id, self.current_page, self.per_page, 
+            self.sort_mode, self.start_date, self.end_date
         )
         
         self.current_page = total_pages
-        embed = await self.get_records_embed()
+        embed = await self.get_messages_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="時間排序", style=discord.ButtonStyle.success, emoji="⏰")
+    async def sort_by_time(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.sort_mode != "time":
+            self.sort_mode = "time"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_messages_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是時間排序模式", ephemeral=True)
+    
+    @discord.ui.button(label="讚數排序", style=discord.ButtonStyle.success, emoji="👍")
+    async def sort_by_reactions(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.sort_mode != "reactions":
+            self.sort_mode = "reactions"
+            self.current_page = 1  # 重置到第一頁
+            embed = await self.get_messages_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("✅ 當前已是讚數排序模式", ephemeral=True)
+    
+    async def get_message_reaction_count(self, thread_id: int, message_id: int) -> int:
+        """獲取消息的最高表情符號數量（帶緩存）"""
+        # 簡單的內存緩存，避免短時間內重複請求
+        cache_key = f"{thread_id}_{message_id}"
+        if hasattr(self, '_reaction_cache') and cache_key in self._reaction_cache:
+            cache_time, count = self._reaction_cache[cache_key]
+            # 緩存5秒
+            if (datetime.now() - cache_time).total_seconds() < 5:
+                return count
+        
+        try:
+            # 獲取消息對象
+            message = await self.bot.get_channel(thread_id).fetch_message(message_id)
+            
+            if not message or not message.reactions:
+                return 0
+            
+            # 計算所有表情符號中的最高數量
+            max_count = 0
+            for reaction in message.reactions:
+                if reaction.count > max_count:
+                    max_count = reaction.count
+            
+            # 緩存結果
+            if not hasattr(self, '_reaction_cache'):
+                self._reaction_cache = {}
+            self._reaction_cache[cache_key] = (datetime.now(), max_count)
+            
+            return max_count
+            
+        except Exception as e:
+            # 如果無法獲取消息或表情符號，返回 0
+            logger.debug(f"無法獲取消息 {message_id} 的表情符號: {e}")
+            return 0
+    
+    async def get_thread_title(self, thread_id: int) -> str:
+        """獲取帖子標題"""
+        try:
+            # 嘗試獲取頻道
+            channel = self.bot.get_channel(thread_id)
+            if not channel or not hasattr(channel, 'name'):
+                return None
+            
+            # 返回帖子標題
+            return channel.name
+            
+        except Exception:
+            # 如果無法獲取帖子標題，返回 None
+            return None
 
 class AppreciatorApplicationView(discord.ui.View):
     """鉴赏申请窗口视图"""
@@ -1502,6 +1843,64 @@ class FeaturedCommands(commands.Cog):
                     await interaction.response.send_message("❌ 创建鉴赏申请窗口时发生错误，请稍后重试。", ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 创建鉴赏申请窗口时发生错误，请稍后重试。", ephemeral=True)
+            except Exception as followup_error:
+                logger.error(f"发送错误消息时发生错误: {followup_error}")
+
+    @app_commands.command(name="全服精选", description="查看全服精選留言（仅管理组可用，支持时间范围和时间/讚数排序）")
+    @app_commands.describe(
+        start_date="起始日期（可选，格式：YYYY-MM-DD，例如：2024-01-01）",
+        end_date="结束日期（可选，格式：YYYY-MM-DD，例如：2024-12-31）"
+    )
+    async def all_featured_messages(self, interaction: discord.Interaction, start_date: str = None, end_date: str = None):
+        """查看全服精選留言命令（仅管理组可用）"""
+        # 记录命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了全服精選留言，时间范围: {start_date} 至 {end_date}")
+        
+        try:
+            # 检查是否为管理组（检查特定角色或权限）
+            has_admin_role = False
+            for role in interaction.user.roles:
+                if role.name in config.ADMIN_ROLE_NAMES:
+                    has_admin_role = True
+                    logger.info(f"✅ 用户 {interaction.user.name} 通过角色 '{role.name}' 获得管理权限")
+                    break
+            if not has_admin_role:
+                has_admin_role = interaction.user.guild_permissions.manage_messages or \
+                                interaction.user.guild_permissions.administrator
+            if not has_admin_role:
+                await interaction.response.send_message("❌ 此命令仅限管理组使用！", ephemeral=True)
+                return
+            
+            # 验证日期格式
+            if start_date:
+                try:
+                    datetime.strptime(start_date, '%Y-%m-%d')
+                except ValueError:
+                    await interaction.response.send_message("❌ 起始日期格式錯誤！請使用 YYYY-MM-DD 格式，例如：2024-01-01", ephemeral=True)
+                    return
+            
+            if end_date:
+                try:
+                    datetime.strptime(end_date, '%Y-%m-%d')
+                except ValueError:
+                    await interaction.response.send_message("❌ 結束日期格式錯誤！請使用 YYYY-MM-DD 格式，例如：2024-12-31", ephemeral=True)
+                    return
+            
+            # 創建全服精選留言視圖（預設為時間排序）
+            view = AllFeaturedMessagesView(self.bot, interaction.guild_id, 1, "time", start_date, end_date)
+            
+            # 獲取嵌入訊息
+            embed = await view.get_messages_embed()
+            
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"查看全服精選留言时发生错误: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 查看全服精選留言时发生错误，请稍后重试。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 查看全服精選留言时发生错误，请稍后重试。", ephemeral=True)
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
 

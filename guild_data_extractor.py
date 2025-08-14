@@ -71,21 +71,11 @@ class GuildDataExtractor:
         """, (guild_id,))
         featured_count = self.cursor.fetchone()[0]
         
-        # 月度积分统计
-        self.cursor.execute("""
-            SELECT COUNT(*) as monthly_users, SUM(points) as monthly_total 
-            FROM monthly_points 
-            WHERE guild_id = ?
-        """, (guild_id,))
-        monthly_stats = self.cursor.fetchone()
-        
         return {
             'guild_id': guild_id,
             'user_count': user_stats[0] if user_stats else 0,
             'total_points': user_stats[1] if user_stats and user_stats[1] else 0,
-            'featured_count': featured_count,
-            'monthly_users': monthly_stats[0] if monthly_stats else 0,
-            'monthly_total': monthly_stats[1] if monthly_stats and monthly_stats[1] else 0
+            'featured_count': featured_count
         }
     
     def extract_user_points(self, guild_id: int) -> List[Dict[str, Any]]:
@@ -105,28 +95,6 @@ class GuildDataExtractor:
                 'points': row[2],
                 'created_at': row[3],
                 'updated_at': row[4]
-            }
-            for row in results
-        ]
-    
-    def extract_monthly_points(self, guild_id: int) -> List[Dict[str, Any]]:
-        """提取群组月度积分数据"""
-        self.cursor.execute("""
-            SELECT user_id, username, points, year_month, created_at, updated_at
-            FROM monthly_points 
-            WHERE guild_id = ?
-            ORDER BY year_month DESC, points DESC
-        """, (guild_id,))
-        
-        results = self.cursor.fetchall()
-        return [
-            {
-                'user_id': row[0],
-                'username': row[1],
-                'points': row[2],
-                'year_month': row[3],
-                'created_at': row[4],
-                'updated_at': row[5]
             }
             for row in results
         ]
@@ -164,18 +132,15 @@ class GuildDataExtractor:
         
         guild_info = self.get_guild_info(guild_id)
         user_points = self.extract_user_points(guild_id)
-        monthly_points = self.extract_monthly_points(guild_id)
         featured_messages = self.extract_featured_messages(guild_id)
         
         return {
             'guild_info': guild_info,
             'user_points': user_points,
-            'monthly_points': monthly_points,
             'featured_messages': featured_messages,
             'extract_time': datetime.now().isoformat(),
             'total_records': {
                 'user_points': len(user_points),
-                'monthly_points': len(monthly_points),
                 'featured_messages': len(featured_messages)
             }
         }
@@ -200,15 +165,6 @@ class GuildDataExtractor:
                     writer.writeheader()
                     writer.writerows(data['user_points'])
                 print(f"✅ 用户积分已保存到: {user_points_file}")
-            
-            # 保存月度积分
-            if data['monthly_points']:
-                monthly_points_file = f"{base_filename}_monthly_points.csv"
-                with open(monthly_points_file, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.DictWriter(f, fieldnames=data['monthly_points'][0].keys())
-                    writer.writeheader()
-                    writer.writerows(data['monthly_points'])
-                print(f"✅ 月度积分已保存到: {monthly_points_file}")
             
             # 保存精選记录
             if data['featured_messages']:
@@ -245,20 +201,6 @@ class GuildDataExtractor:
             ''')
             
             new_cursor.execute('''
-                CREATE TABLE IF NOT EXISTS monthly_points (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    guild_id INTEGER NOT NULL,
-                    username TEXT NOT NULL,
-                    points INTEGER DEFAULT 0,
-                    year_month TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(user_id, guild_id, year_month)
-                )
-            ''')
-            
-            new_cursor.execute('''
                 CREATE TABLE IF NOT EXISTS featured_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
@@ -277,7 +219,6 @@ class GuildDataExtractor:
             
             # 创建索引
             new_cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_points_guild ON user_points(guild_id)')
-            new_cursor.execute('CREATE INDEX IF NOT EXISTS idx_monthly_points_guild ON monthly_points(guild_id)')
             new_cursor.execute('CREATE INDEX IF NOT EXISTS idx_featured_messages_guild ON featured_messages(guild_id)')
             
             # 插入用户积分数据
@@ -295,23 +236,6 @@ class GuildDataExtractor:
                         user_point['updated_at']
                     ))
                 print(f"✅ 已插入 {len(data['user_points'])} 条用户积分记录")
-            
-            # 插入月度积分数据
-            if data['monthly_points']:
-                for monthly_point in data['monthly_points']:
-                    new_cursor.execute('''
-                        INSERT INTO monthly_points (user_id, guild_id, username, points, year_month, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        monthly_point['user_id'],
-                        data['guild_info']['guild_id'],
-                        monthly_point['username'],
-                        monthly_point['points'],
-                        monthly_point['year_month'],
-                        monthly_point['created_at'],
-                        monthly_point['updated_at']
-                    ))
-                print(f"✅ 已插入 {len(data['monthly_points'])} 条月度积分记录")
             
             # 插入精選记录数据
             if data['featured_messages']:
@@ -358,12 +282,9 @@ class GuildDataExtractor:
         print(f"👥 用户数量: {guild_info['user_count']}")
         print(f"🏆 总积分: {guild_info['total_points']}")
         print(f"🌟 精選记录: {guild_info['featured_count']}")
-        print(f"📅 月度积分用户: {guild_info['monthly_users']}")
-        print(f"📈 月度总积分: {guild_info['monthly_total']}")
         print("-"*50)
         print(f"📋 提取记录数:")
         print(f"   - 用户积分: {total_records['user_points']}")
-        print(f"   - 月度积分: {total_records['monthly_points']}")
         print(f"   - 精選记录: {total_records['featured_messages']}")
         print(f"⏰ 提取时间: {data['extract_time']}")
         print("="*50)
@@ -429,6 +350,10 @@ def main():
                 if output_format in ['csv', 'both']:
                     extractor.save_to_csv(data, base_filename)
                 
+                if output_format in ['db', 'both']:
+                    db_filename = f"{base_filename}.db"
+                    extractor.create_new_database(data, db_filename)
+                
                 print()  # 空行分隔
         
         else:
@@ -460,10 +385,6 @@ def main():
             
             if output_format in ['csv', 'both']:
                 extractor.save_to_csv(data, base_filename)
-            
-            if output_format in ['db', 'both']:
-                db_filename = f"{base_filename}.db"
-                extractor.create_new_database(data, db_filename)
             
             if output_format in ['db', 'both']:
                 db_filename = f"{base_filename}.db"
