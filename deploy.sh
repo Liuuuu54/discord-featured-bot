@@ -80,13 +80,14 @@ check_env() {
         exit 1
     fi
     
-    # 检查其他必要的环境变量
+    # 检查必要的环境变量
     print_message $BLUE "📋 环境变量检查:"
     echo "DISCORD_TOKEN: $(grep DISCORD_TOKEN .env | cut -d'=' -f2 | head -c 10)..."
-    echo "ADMIN_ROLE_NAMES: $(grep ADMIN_ROLE_NAMES .env | cut -d'=' -f2)"
-    echo "APPRECIATOR_ROLE_NAME: $(grep APPRECIATOR_ROLE_NAME .env | cut -d'=' -f2)"
     
     print_message $GREEN "✅ 环境变量检查通过"
+    print_message $BLUE "📋 配置检查:"
+    echo "管理组角色: 在 config.py 中设置"
+    echo "鉴赏家配置: 在 config.py 中设置"
 }
 
 # 函数：构建镜像

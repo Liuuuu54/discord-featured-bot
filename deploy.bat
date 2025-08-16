@@ -115,10 +115,11 @@ for /f "tokens=1,2 delims==" %%a in ('findstr "DISCORD_TOKEN=" .env') do (
     set "token=!token:~0,10!..."
     echo DISCORD_TOKEN: !token!
 )
-for /f "tokens=1,2 delims==" %%a in ('findstr "ADMIN_ROLE_NAMES=" .env') do echo ADMIN_ROLE_NAMES: %%b
-for /f "tokens=1,2 delims==" %%a in ('findstr "APPRECIATOR_ROLE_NAME=" .env') do echo APPRECIATOR_ROLE_NAME: %%b
 
 call :print_message GREEN "环境变量检查通过"
+call :print_message BLUE "配置检查:"
+echo 管理组角色: 在 config.py 中设置
+echo 鉴赏家配置: 在 config.py 中设置
 goto :eof
 
 REM 函数：构建镜像
