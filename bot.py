@@ -1406,8 +1406,7 @@ class FeaturedCommands(commands.Cog):
         self.bot.tree.add_command(
             app_commands.ContextMenu(
                 name="精選此留言",
-                callback=self.context_feature_message,
-                type=app_commands.AppCommandType.message
+                callback=self.context_feature_message
             )
         )
     
