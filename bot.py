@@ -21,6 +21,155 @@ logging.basicConfig(
 )
 logger = logging.getLogger('discord')
 
+class FeatureMessageModal(discord.ui.Modal, title="🌟 精選留言"):
+    """精選留言的互動表單"""
+    
+    def __init__(self, message: discord.Message, thread_id: int, bot, db):
+        super().__init__()
+        self.message = message
+        self.thread_id = thread_id
+        self.bot = bot
+        self.db = db
+        
+        # 精選原因輸入框
+        self.reason = discord.ui.TextInput(
+            label="精選原因",
+            placeholder="請輸入精選原因（可選）",
+            required=False,
+            max_length=500,
+            style=discord.TextStyle.paragraph
+        )
+        
+        # 說明文字
+        self.description = discord.ui.TextInput(
+            label="📋 精選說明",
+            placeholder=f"精選 {message.author.display_name} 的留言",
+            required=False,
+            max_length=1000,
+            style=discord.TextStyle.paragraph,
+            default=f"""🌟 精選效果：
+• {message.author.display_name} 將獲得 {config.POINTS_PER_FEATURE} 積分
+
+📋 精選限制：
+• 每個帖子中只能精選每位用戶一次
+• 不能精選自己的留言
+• 留言內容至少需要 {config.MIN_MESSAGE_LENGTH} 個字符
+• 不能精選只包含表情符號的留言
+• 不能精選 bot 消息或系統消息
+
+💡 提示：提交後會自動檢查留言內容質量"""
+        )
+        
+        self.add_item(self.description)
+        self.add_item(self.reason)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """表單提交處理"""
+        try:
+            # 再次檢查是否已經精選過該用戶（防止重複提交）
+            if self.db.is_already_featured(self.thread_id, self.message.author.id):
+                await interaction.response.send_message(
+                    f"❌ 您已經精選過 {self.message.author.display_name} 的留言了！每個帖子中只能精選每位用戶一次。", 
+                    ephemeral=True
+                )
+                return
+            
+            # 獲取精選原因
+            reason = self.reason.value.strip() if self.reason.value else "無（右鍵精選）"
+            
+            # 創建精選通知
+            embed = discord.Embed(
+                title="🌟 留言精選",
+                description=f"{self.message.author.display_name} 的留言被設為精選！",
+                color=discord.Color.gold(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="精選的留言",
+                value=f"[點擊查看]({self.message.jump_url})",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="精選者",
+                value=interaction.user.display_name,
+                inline=True
+            )
+            
+            embed.add_field(
+                name="精選原因",
+                value=reason,
+                inline=False
+            )
+            
+            embed.set_footer(text=f"留言ID: {self.message.id}")
+            
+            # 在訊息內容中 @ 留言者，這樣會真正觸發 Discord 的 @ 通知
+            await interaction.response.send_message(content=f"{self.message.author.mention}", embed=embed)
+            
+            # 等待一下让消息发送完成，然后获取机器人发送的消息ID
+            await asyncio.sleep(0.5)
+            
+            # 获取机器人发送的最新消息ID
+            bot_message_id = None
+            try:
+                # 获取频道的最新消息
+                async for bot_msg in interaction.channel.history(limit=10):
+                    if bot_msg.author.id == self.bot.user.id and bot_msg.embeds:
+                        # 检查是否是精选消息（通过检查embed标题）
+                        if bot_msg.embeds[0].title == "🌟 留言精選":
+                            bot_message_id = bot_msg.id
+                            break
+            except Exception as e:
+                logger.warning(f"⚠️ 無法獲取機器人消息ID: {e}")
+            
+            # 添加精選記錄（包含機器人消息ID）
+            success = self.db.add_featured_message(
+                guild_id=interaction.guild_id,
+                thread_id=self.thread_id,
+                message_id=self.message.id,
+                author_id=self.message.author.id,
+                author_name=self.message.author.display_name,
+                featured_by_id=interaction.user.id,
+                featured_by_name=interaction.user.display_name,
+                reason=reason,
+                bot_message_id=bot_message_id
+            )
+            
+            if not success:
+                await interaction.followup.send("❌ 精選失敗，該用戶可能已經被精選過了。", ephemeral=True)
+                return
+            
+            # 給用戶添加積分（總積分）
+            logger.info(f"🎯 給用戶 {self.message.author.display_name} (ID: {self.message.author.id}) 添加 {config.POINTS_PER_FEATURE} 積分")
+            new_points = self.db.add_user_points(
+                user_id=self.message.author.id,
+                username=self.message.author.display_name,
+                points=config.POINTS_PER_FEATURE,
+                guild_id=interaction.guild_id
+            )
+            
+            # 給用戶添加月度積分
+            new_monthly_points = self.db.add_monthly_points(
+                user_id=self.message.author.id,
+                username=self.message.author.display_name,
+                points=config.POINTS_PER_FEATURE,
+                guild_id=interaction.guild_id
+            )
+            
+            logger.info(f"✅ 用戶 {self.message.author.display_name} 積分更新完成 - 總積分: {new_points}, 月度積分: {new_monthly_points}")
+            
+            # 記錄成功
+            logger.info(f"✅ 用戶 {interaction.user.name} 成功精選了 {self.message.author.display_name} 的留言")
+            
+        except Exception as e:
+            logger.error(f"精選留言表單提交時發生錯誤: {e}")
+            await interaction.followup.send(
+                "❌ 精選過程中發生錯誤，請稍後重試。",
+                ephemeral=True
+            )
+
 class FeaturedMessageBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -774,11 +923,24 @@ class AllFeaturedMessagesView(discord.ui.View):
                 # 需要重新掃描
                 messages_with_reactions = []
                 total_messages = len(all_messages)
-                progress_messages = []  # 存儲所有進度訊息
+                progress_message = None  # 單一進度條訊息
+                
+                # 發送初始進度條訊息
+                if interaction:
+                    try:
+                        initial_embed = discord.Embed(
+                            title="🌟 全服精選留言 - 掃描中",
+                            description="正在掃描所有精選留言的表情符號數量...\n這可能需要一些時間，請稍候。",
+                            color=discord.Color.blue(),
+                            timestamp=discord.utils.utcnow()
+                        )
+                        progress_message = await interaction.followup.send(embed=initial_embed, ephemeral=True)
+                    except:
+                        pass  # 如果發送失敗，繼續執行
                 
                 for i, msg in enumerate(all_messages, 1):
                     # 更新進度條（每10個或最後一個）
-                    if interaction and (i % 10 == 0 or i == total_messages):
+                    if interaction and progress_message and (i % 10 == 0 or i == total_messages):
                         progress = (i / total_messages) * 100
                         progress_bar = self.create_progress_bar(progress)
                         
@@ -789,10 +951,9 @@ class AllFeaturedMessagesView(discord.ui.View):
                             timestamp=discord.utils.utcnow()
                         )
                         try:
-                            progress_msg = await interaction.followup.send(embed=progress_embed, ephemeral=True)
-                            progress_messages.append(progress_msg)
+                            await progress_message.edit(embed=progress_embed)
                         except:
-                            pass  # 如果發送失敗，繼續執行
+                            pass  # 如果編輯失敗，繼續執行
                     
                     # 獲取表情符號數量
                     reaction_count = await self.get_message_reaction_count(msg['thread_id'], msg['message_id'])
@@ -1240,6 +1401,15 @@ class FeaturedCommands(commands.Cog):
     def __init__(self, bot: FeaturedMessageBot):
         self.bot = bot
         self.db = bot.db
+        
+        # 註冊 Message Context Menu
+        self.bot.tree.add_command(
+            app_commands.ContextMenu(
+                name="精選此留言",
+                callback=self.context_feature_message,
+                type=app_commands.AppCommandType.message
+            )
+        )
     
     def extract_message_id_from_url(self, url: str) -> int:
         """从Discord消息URL中提取消息ID"""
@@ -1308,6 +1478,55 @@ class FeaturedCommands(commands.Cog):
                 return {'valid': False, 'reason': '留言内容不符合精选标准！'}
         
         return {'valid': True, 'reason': '内容检查通过'}
+    
+    async def context_feature_message(self, interaction: discord.Interaction, message: discord.Message):
+        """Message Context Menu 精選留言回調"""
+        # 記錄命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了右鍵精選功能，留言ID: {message.id}")
+        
+        try:
+            # 檢查是否在帖子中
+            if not interaction.channel.type == discord.ChannelType.public_thread:
+                await interaction.response.send_message("❌ 此功能只能在帖子中使用！", ephemeral=True)
+                return
+            
+            thread_id = interaction.channel.id
+            thread_owner_id = interaction.channel.owner_id
+            
+            # 檢查是否為樓主
+            if interaction.user.id != thread_owner_id:
+                await interaction.response.send_message("❌ 只有樓主才能精選留言！", ephemeral=True)
+                return
+            
+            # 檢查是否精選自己的留言
+            if message.author.id == interaction.user.id:
+                await interaction.response.send_message("❌ 不能精選自己的留言！", ephemeral=True)
+                return
+            
+            # 檢查留言內容質量
+            content_check = self.check_message_quality(message)
+            if not content_check['valid']:
+                await interaction.response.send_message(f"❌ {content_check['reason']}", ephemeral=True)
+                return
+            
+            # 檢查是否已經精選過該用戶
+            if self.db.is_already_featured(thread_id, message.author.id):
+                await interaction.response.send_message(
+                    f"❌ 您已經精選過 {message.author.display_name} 的留言了！每個帖子中只能精選每位用戶一次。", 
+                    ephemeral=True
+                )
+                return
+            
+            # 創建精選原因表單
+            modal = FeatureMessageModal(message, thread_id, self.bot, self.db)
+            await interaction.response.send_modal(modal)
+            
+        except Exception as e:
+            logger.error(f"右鍵精選留言時發生錯誤: {e}")
+            await interaction.response.send_message(
+                "❌ 精選過程中發生錯誤，請稍後重試。",
+                ephemeral=True
+            )
     
     @app_commands.command(name="精选", description="将指定用户的留言设为精选，该用户获得1积分（留言需至少10字符且不能只含表情）")
     @app_commands.describe(
