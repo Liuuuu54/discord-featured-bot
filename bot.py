@@ -766,34 +766,24 @@ class AllFeaturedMessagesView(discord.ui.View):
                 )
                 return embed
             
-            # 創建進度條嵌入訊息
-            progress_embed = discord.Embed(
-                title="🌟 全服精選留言 - 掃描中",
-                description="正在掃描所有精選留言的表情符號數量...",
-                color=discord.Color.blue(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            # 發送進度條訊息（使用當前交互的頻道）
+            # 發送處理中的私密訊息
             if interaction:
-                progress_message = await interaction.channel.send(embed=progress_embed)
-            else:
-                # 如果沒有交互，跳過進度條
-                progress_message = None
+                try:
+                    processing_embed = discord.Embed(
+                        title="🌟 全服精選留言 - 處理中",
+                        description="正在掃描所有精選留言的表情符號數量...\n這可能需要一些時間，請稍候。",
+                        color=discord.Color.blue(),
+                        timestamp=discord.utils.utcnow()
+                    )
+                    await interaction.followup.send(embed=processing_embed, ephemeral=True)
+                except:
+                    pass  # 如果發送失敗，繼續執行
             
             # 獲取所有消息的表情符號數量並排序
             messages_with_reactions = []
             total_messages = len(all_messages)
             
             for i, msg in enumerate(all_messages, 1):
-                # 更新進度條
-                if progress_message:
-                    progress = (i / total_messages) * 100
-                    progress_bar = self.create_progress_bar(progress)
-                    
-                    progress_embed.description = f"正在掃描表情符號數量...\n{progress_bar} {progress:.1f}% ({i}/{total_messages})"
-                    await progress_message.edit(embed=progress_embed)
-                
                 # 獲取表情符號數量
                 reaction_count = await self.get_message_reaction_count(msg['thread_id'], msg['message_id'])
                 messages_with_reactions.append({
@@ -805,12 +795,8 @@ class AllFeaturedMessagesView(discord.ui.View):
                 if i % 5 == 0:  # 每5個請求後稍作延遲
                     await asyncio.sleep(0.1)
             
-            # 刪除進度條訊息
-            if progress_message:
-                try:
-                    await progress_message.delete()
-                except:
-                    pass
+            # 清理進度條訊息（可選，因為 followup 訊息通常不需要刪除）
+            # 如果需要刪除，可以遍歷 progress_messages 並刪除
             
             # 按表情符號數量降序排序
             all_messages_sorted = sorted(messages_with_reactions, key=lambda x: x['reaction_count'], reverse=True)
@@ -958,9 +944,21 @@ class AllFeaturedMessagesView(discord.ui.View):
             )
         
         if self.current_page < total_pages:
+            # 如果是讚數排序，先回應交互避免超時
+            if self.sort_mode == "reactions":
+                await interaction.response.defer()
+            
             self.current_page += 1
             embed = await self.get_messages_embed(interaction)
-            await interaction.response.edit_message(embed=embed, view=self)
+            
+            if self.sort_mode == "reactions":
+                # 使用 followup 更新訊息
+                try:
+                    await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+                except:
+                    await interaction.followup.send(embed=embed, view=self)
+            else:
+                await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
     async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -978,27 +976,57 @@ class AllFeaturedMessagesView(discord.ui.View):
                 self.sort_mode, self.start_date, self.end_date
             )
         
+        # 如果是讚數排序，先回應交互避免超時
+        if self.sort_mode == "reactions":
+            await interaction.response.defer()
+        
         self.current_page = total_pages
         embed = await self.get_messages_embed(interaction)
-        await interaction.response.edit_message(embed=embed, view=self)
+        
+        if self.sort_mode == "reactions":
+            # 使用 followup 更新訊息
+            try:
+                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+            except:
+                await interaction.followup.send(embed=embed, view=self)
+        else:
+            await interaction.response.edit_message(embed=embed, view=self)
     
     @discord.ui.button(label="時間排序", style=discord.ButtonStyle.success, emoji="⏰")
     async def sort_by_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.sort_mode != "time":
+            # 先回應交互，避免超時
+            await interaction.response.defer()
+            
             self.sort_mode = "time"
             self.current_page = 1  # 重置到第一頁
             embed = await self.get_messages_embed(interaction)
-            await interaction.response.edit_message(embed=embed, view=self)
+            
+            # 使用 followup 更新訊息
+            try:
+                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+            except:
+                # 如果 followup 失敗，嘗試發送新訊息
+                await interaction.followup.send(embed=embed, view=self)
         else:
             await interaction.response.send_message("✅ 當前已是時間排序模式", ephemeral=True)
     
     @discord.ui.button(label="讚數排序", style=discord.ButtonStyle.success, emoji="👍")
     async def sort_by_reactions(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.sort_mode != "reactions":
+            # 先回應交互，避免超時
+            await interaction.response.defer()
+            
             self.sort_mode = "reactions"
             self.current_page = 1  # 重置到第一頁
             embed = await self.get_messages_embed(interaction)
-            await interaction.response.edit_message(embed=embed, view=self)
+            
+            # 使用 followup 更新訊息
+            try:
+                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+            except:
+                # 如果 followup 失敗，嘗試發送新訊息
+                await interaction.followup.send(embed=embed, view=self)
         else:
             await interaction.response.send_message("✅ 當前已是讚數排序模式", ephemeral=True)
     
