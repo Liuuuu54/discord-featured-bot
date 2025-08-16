@@ -1,5 +1,7 @@
 # 留言精選 Discord Bot
 
+> 版本：1.4.2
+
 一个专为Discord论坛设计的留言精選机器人，允许楼主将优质留言设为精選，并为被精選用户提供积分奖励。支持月度积分系统和排行榜功能。
 
 ## 功能特点
@@ -38,19 +40,24 @@ cd dc_bot
 pip install -r requirements.txt
 ```
 
-### 3. 配置環境變量
+### 3. 配置機器人
+
+#### 3.1 設置敏感信息
 複製 `env_example.txt` 為 `.env` 並設置您的 Discord Bot Token:
 
-**基本配置**:
-```
+```env
 DISCORD_TOKEN=your_actual_bot_token_here
 ```
 
-**可选配置**:
-```
-# 管理组角色名称（支持逗号分隔多个角色）
-ADMIN_ROLE_NAMES=管理组,管理员,Admin,Moderator,管理,版主
-```
+#### 3.2 自定義功能配置（可選）
+編輯 `config.py` 文件，根據需要調整各種配置項：
+
+- **積分系統**: 修改 `POINTS_PER_FEATURE` 調整每次精選獲得的積分
+- **界面設置**: 調整 `VIEW_TIMEOUT`、`USER_RECORDS_PER_PAGE` 等界面參數
+- **管理組角色**: 修改 `ADMIN_ROLE_NAMES` 添加管理組角色
+- **鑑賞家要求**: 調整 `APPRECIATOR_MIN_POINTS` 和 `APPRECIATOR_MIN_REFERRALS`
+
+詳細配置說明請參考 [CONFIG_GUIDE.md](CONFIG_GUIDE.md)
 
 ### 4. 創建 Discord 機器人
 1. 訪問 [Discord Developer Portal](https://discord.com/developers/applications)
@@ -127,8 +134,8 @@ python bot.py
 ### 🏆 /总排行
 显示总积分排行榜和引荐人数排行榜（仅管理组可用，支持时间范围）
 - **权限**: 需要管理组角色或管理权限
-  - 支持角色名称：可通过环境变量 `ADMIN_ROLE_NAMES` 自定义
-  - 默认角色：管理组、管理员、Admin、Moderator、管理、版主
+  - 支持角色名称：可在 `config.py` 中自定义
+  - 默认角色：管理组、秘书组、BOT维护员、版主、Admin、Moderator
   - 或拥有管理消息权限
   - 或拥有管理员权限
 - **参数**: 
@@ -153,8 +160,8 @@ python bot.py
 ### 🌌 /全服精选列表
 查看全服所有精選留言列表（仅管理组可用，支持时间范围和时间/讚数排序）
 - **权限**: 需要管理组角色或管理权限
-  - 支持角色名称：可通过环境变量 `ADMIN_ROLE_NAMES` 自定义
-  - 默认角色：管理组、管理员、Admin、Moderator、管理、版主
+  - 支持角色名称：可在 `config.py` 中自定义
+  - 默认角色：管理组、秘书组、BOT维护员、版主、Admin、Moderator
   - 或拥有管理消息权限
   - 或拥有管理员权限
 - **参数**: 
@@ -178,8 +185,8 @@ python bot.py
 ### 📜 /鉴赏申请窗口
 创建鉴赏家申请窗口（仅管理组可用）
 - **权限**: 需要管理组角色或管理权限
-  - 支持角色名称：可通过环境变量 `ADMIN_ROLE_NAMES` 自定义
-  - 默认角色：管理组、管理员、Admin、Moderator、管理、版主
+  - 支持角色名称：可在 `config.py` 中自定义
+  - 默认角色：管理组、秘书组、BOT维护员、版主、Admin、Moderator
   - 或拥有管理消息权限
   - 或拥有管理员权限
 - **功能**: 
@@ -248,28 +255,6 @@ data/
 - `reason`: 精选原因
 - `bot_message_id`: 机器人精选通知消息ID
 
-## 文件结构
-
-```
-dc_bot/
-├── bot.py                    # 主机器人文件
-├── config.py                 # 配置文件
-├── database.py               # 数据库管理
-├── db_checker.py             # 数据库检查工具
-├── guild_data_extractor.py   # 群组数据提取工具
-├── requirements.txt          # 依赖包
-├── env_example.txt           # 环境变量示例
-├── README.md                 # 说明文档
-├── Dockerfile                # Docker 配置
-├── docker-compose.yml        # Docker Compose 配置
-├── deploy.sh                 # Docker 部署脚本
-├── backup.sh                 # Docker 备份脚本
-├── data/                     # 数据目录（自动创建）
-│   ├── featured_messages.db  # 数据库文件
-│   └── logs/                 # 日志目录
-│       └── bot.log          # 机器人运行日志
-└── start.bat                 # Windows 启动脚本
-```
 
 ## 工具说明
 
@@ -351,6 +336,12 @@ python guild_data_extractor.py all
 **日志文件位置**: `data/logs/bot.log`
 
 ## 更新日志
+
+### v1.4.2
+- ⚙️ **配置系统重构**: 大幅简化配置管理，将敏感信息（`DISCORD_TOKEN`）与环境配置分离
+- 📚 **文档更新**: 更新 `CONFIG_GUIDE.md`、`env_example.txt` 等文档，简化配置说明
+- 🛠️ **配置检查工具**: 新增 `config_check.py` 工具，方便用户验证配置正确性
+- 🐳 **Docker 配置优化**: 简化 `docker-compose.yml` 环境变量配置，减少重复设置
 
 ### v1.4.1
 - 🌟 **全服精选列表管理**: 新增 `/全服精选列表` 命令，管理组可查看全服所有精選留言列表

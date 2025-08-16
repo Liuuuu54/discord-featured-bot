@@ -1,26 +1,21 @@
 # Discord Bot 环境变量配置
 # 复制此文件为 .env 并填入实际值
+# 注意：只有敏感信息需要放在 .env 文件中，其他配置请在 config.py 中修改
 
-# Discord Bot Token (必需)
+# ==================== 敏感信息 ====================
+# Discord Bot Token（必需）
 # 从 Discord Developer Portal 获取
 DISCORD_TOKEN=your_discord_bot_token_here
 
-# 管理组角色名称 (可选)
-# 支持逗号分隔多个角色名称
-# 默认值: 管理组,管理员,Admin,Moderator,管理,版主
-ADMIN_ROLE_NAMES=管理组,管理员,Admin,Moderator,管理,版主
+# ==================== 可选配置 ====================
+# 以下配置项如果不设置，将使用 config.py 中的默认值
+# 如需自定义，请取消注释并修改
 
-# 鉴赏家申请配置 (可选)
-# 鉴赏家身份组名称，默认值: 鉴赏家
-APPRECIATOR_ROLE_NAME=鉴赏家
-# 最低积分要求，默认值: 5
-APPRECIATOR_MIN_POINTS=5
-# 最低引荐人数要求，默认值: 5
-APPRECIATOR_MIN_REFERRALS=5
+# 管理组角色名称（在 config.py 中直接设置）
+# 如需修改，请编辑 config.py 文件中的 ADMIN_ROLE_NAMES 列表
 
-# 數據庫配置
-DATABASE_PATH=./data/bot_database.db
-
-# 部署配置
-# 本地開發時使用 .env 文件
-# VPS 部署時使用環境變量
+# 鉴赏家申请配置（在 config.py 中直接设置）
+# 如需修改，请编辑 config.py 文件中的以下配置项：
+# - APPRECIATOR_ROLE_NAME = '鉴赏家'
+# - APPRECIATOR_MIN_POINTS = 5
+# - APPRECIATOR_MIN_REFERRALS = 5
