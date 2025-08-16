@@ -298,8 +298,7 @@ echo.
 call :print_message BLUE "系统资源信息:"
 echo 磁盘使用:
 dir
-echo 端口占用:
-netstat -an | findstr ":80\|:443\|:3000\|:8080" || echo 未发现相关端口占用
+echo 端口检查: Discord Bot 不需要端口监听
 goto :eof
 
 REM 函数：显示帮助

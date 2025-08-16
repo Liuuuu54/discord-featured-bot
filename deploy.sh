@@ -138,10 +138,7 @@ start_service() {
         build_image
     fi
     
-    # 检查端口是否被占用
-    if netstat -tuln | grep -q ":80 "; then
-        print_message $YELLOW "⚠️  端口 80 可能被占用"
-    fi
+    # Discord Bot 不需要端口检查，跳过
     
     # 创建数据目录
     mkdir -p data/logs
@@ -262,8 +259,7 @@ debug_info() {
     print_message $BLUE "系统资源信息:"
     echo "磁盘使用: $(df -h .)"
     echo "内存使用: $(free -h)"
-    echo "端口占用:"
-    netstat -tuln | grep -E ":(80|443|3000|8080)" || echo "未发现相关端口占用"
+    echo "端口检查: Discord Bot 不需要端口监听"
 }
 
 # 函数：显示帮助
