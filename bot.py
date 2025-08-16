@@ -1403,12 +1403,12 @@ class FeaturedCommands(commands.Cog):
         self.db = bot.db
         
         # 註冊 Message Context Menu
-        self.bot.tree.add_command(
-            app_commands.ContextMenu(
-                name="精選此留言",
-                callback=self.context_feature_message
-            )
+        context_menu = app_commands.ContextMenu(
+            name="精選此留言",
+            callback=self.context_feature_message
         )
+        self.bot.tree.add_command(context_menu)
+        logger.info(f"✅ 已註冊 Context Menu: {context_menu.name}")
     
     def extract_message_id_from_url(self, url: str) -> int:
         """从Discord消息URL中提取消息ID"""
