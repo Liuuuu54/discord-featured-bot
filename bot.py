@@ -743,6 +743,8 @@ class AllFeaturedMessagesView(discord.ui.View):
         self.sort_mode = sort_mode  # "time" 或 "reactions"
         self.start_date = start_date
         self.end_date = end_date
+        self._reactions_cache = {}  # 緩存表情符號數量
+        self._sorted_messages = None  # 緩存排序後的消息
     
     async def get_messages_embed(self, interaction: discord.Interaction = None) -> discord.Embed:
         """獲取當前頁面的全服精選留言嵌入訊息"""
@@ -766,40 +768,53 @@ class AllFeaturedMessagesView(discord.ui.View):
                 )
                 return embed
             
-            # 發送處理中的私密訊息
-            if interaction:
-                try:
-                    processing_embed = discord.Embed(
-                        title="🌟 全服精選留言 - 處理中",
-                        description="正在掃描所有精選留言的表情符號數量...\n這可能需要一些時間，請稍候。",
-                        color=discord.Color.blue(),
-                        timestamp=discord.utils.utcnow()
-                    )
-                    await interaction.followup.send(embed=processing_embed, ephemeral=True)
-                except:
-                    pass  # 如果發送失敗，繼續執行
-            
-            # 獲取所有消息的表情符號數量並排序
-            messages_with_reactions = []
-            total_messages = len(all_messages)
-            
-            for i, msg in enumerate(all_messages, 1):
-                # 獲取表情符號數量
-                reaction_count = await self.get_message_reaction_count(msg['thread_id'], msg['message_id'])
-                messages_with_reactions.append({
-                    **msg,
-                    'reaction_count': reaction_count
-                })
+            # 檢查是否有緩存的排序結果
+            cache_key = f"{self.start_date}_{self.end_date}"
+            if self._sorted_messages is None or cache_key not in self._sorted_messages:
+                # 需要重新掃描
+                messages_with_reactions = []
+                total_messages = len(all_messages)
+                progress_messages = []  # 存儲所有進度訊息
                 
-                # 添加延遲以避免 Discord API 限制
-                if i % 5 == 0:  # 每5個請求後稍作延遲
-                    await asyncio.sleep(0.1)
-            
-            # 清理進度條訊息（可選，因為 followup 訊息通常不需要刪除）
-            # 如果需要刪除，可以遍歷 progress_messages 並刪除
-            
-            # 按表情符號數量降序排序
-            all_messages_sorted = sorted(messages_with_reactions, key=lambda x: x['reaction_count'], reverse=True)
+                for i, msg in enumerate(all_messages, 1):
+                    # 更新進度條（每10個或最後一個）
+                    if interaction and (i % 10 == 0 or i == total_messages):
+                        progress = (i / total_messages) * 100
+                        progress_bar = self.create_progress_bar(progress)
+                        
+                        progress_embed = discord.Embed(
+                            title="🌟 全服精選留言 - 掃描中",
+                            description=f"正在掃描表情符號數量...\n{progress_bar} {progress:.1f}% ({i}/{total_messages})",
+                            color=discord.Color.blue(),
+                            timestamp=discord.utils.utcnow()
+                        )
+                        try:
+                            progress_msg = await interaction.followup.send(embed=progress_embed, ephemeral=True)
+                            progress_messages.append(progress_msg)
+                        except:
+                            pass  # 如果發送失敗，繼續執行
+                    
+                    # 獲取表情符號數量
+                    reaction_count = await self.get_message_reaction_count(msg['thread_id'], msg['message_id'])
+                    messages_with_reactions.append({
+                        **msg,
+                        'reaction_count': reaction_count
+                    })
+                    
+                    # 添加延遲以避免 Discord API 限制
+                    if i % 5 == 0:  # 每5個請求後稍作延遲
+                        await asyncio.sleep(0.1)
+                
+                # 按表情符號數量降序排序
+                all_messages_sorted = sorted(messages_with_reactions, key=lambda x: x['reaction_count'], reverse=True)
+                
+                # 緩存結果
+                if self._sorted_messages is None:
+                    self._sorted_messages = {}
+                self._sorted_messages[cache_key] = all_messages_sorted
+            else:
+                # 使用緩存的結果
+                all_messages_sorted = self._sorted_messages[cache_key]
             
             # 計算分頁
             total_records = len(all_messages_sorted)
