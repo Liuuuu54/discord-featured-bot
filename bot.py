@@ -6,20 +6,135 @@ from database import DatabaseManager
 import logging
 import asyncio
 from datetime import datetime
+import sqlite3
+import re
 
-# 设置日志
-log_level = getattr(logging, config.LOG_LEVEL.upper(), logging.INFO)
-handlers = [logging.FileHandler(config.LOG_FILE, encoding='utf-8')]
-
-if config.LOG_TO_CONSOLE:
-    handlers.append(logging.StreamHandler())  # 同时输出到控制台
-
+# 設置日誌
 logging.basicConfig(
-    level=log_level,
+    level=getattr(logging, config.LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=handlers
+    handlers=[
+        logging.FileHandler(config.LOG_FILE, encoding='utf-8'),
+        logging.StreamHandler() if config.LOG_TO_CONSOLE else logging.NullHandler()
+    ]
 )
-logger = logging.getLogger('discord')
+logger = logging.getLogger(__name__)
+
+class UnfeatureConfirmView(discord.ui.View):
+    """取消精選確認視圖"""
+    
+    def __init__(self, message, thread_id, bot, db):
+        super().__init__(timeout=60)  # 60秒超時
+        self.message = message
+        self.thread_id = thread_id
+        self.bot = bot
+        self.db = db
+    
+    @discord.ui.button(label="✅ 確認取消精選", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def confirm_unfeature(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """確認取消精選"""
+        try:
+            # 檢查是否為樓主
+            thread_owner_id = interaction.channel.owner_id
+            if interaction.user.id != thread_owner_id:
+                await interaction.response.send_message("❌ 只有樓主才能取消精選留言！", ephemeral=True)
+                return
+            
+            # 檢查精選記錄是否存在
+            featured_info = self.db.get_featured_message_by_id(self.message.id, self.thread_id)
+            if not featured_info:
+                await interaction.response.send_message("❌ 找不到該留言的精選記錄！", ephemeral=True)
+                return
+            
+            # 嘗試刪除機器人的精選消息
+            bot_message_deleted = False
+            if featured_info.get('bot_message_id'):
+                try:
+                    bot_message = await interaction.channel.fetch_message(featured_info['bot_message_id'])
+                    await bot_message.delete()
+                    bot_message_deleted = True
+                    logger.info(f"🗑️ 已刪除機器人精選消息 ID: {featured_info['bot_message_id']}")
+                except discord.NotFound:
+                    logger.warning(f"⚠️ 找不到機器人精選消息 ID: {featured_info['bot_message_id']}")
+                except discord.Forbidden:
+                    logger.warning(f"⚠️ 沒有權限刪除機器人精選消息 ID: {featured_info['bot_message_id']}")
+                except Exception as e:
+                    logger.error(f"❌ 刪除機器人精選消息時發生錯誤: {e}")
+            
+            # 移除精選記錄
+            success = self.db.remove_featured_message(self.message.id, self.thread_id)
+            if not success:
+                await interaction.response.send_message("❌ 取消精選失敗，請稍後重試。", ephemeral=True)
+                return
+            
+            # 扣除用戶積分
+            logger.info(f"🎯 扣除用戶 {self.message.author.display_name} (ID: {self.message.author.id}) {config.POINTS_PER_FEATURE} 積分")
+            new_points = self.db.add_user_points(
+                user_id=self.message.author.id,
+                username=self.message.author.display_name,
+                points=-config.POINTS_PER_FEATURE,  # 負數表示扣除
+                guild_id=interaction.guild_id
+            )
+            
+            # 創建成功消息
+            embed = discord.Embed(
+                title="✅ 精選已取消",
+                description=f"已成功取消 {featured_info['author_name']} 留言的精選狀態",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="被取消精選的用戶",
+                value=featured_info['author_name'],
+                inline=True
+            )
+            
+            embed.add_field(
+                name="取消者",
+                value=interaction.user.display_name,
+                inline=True
+            )
+            
+            embed.add_field(
+                name="積分變更",
+                value=f"{featured_info['author_name']} 的積分已減少 {config.POINTS_PER_FEATURE} 分",
+                inline=False
+            )
+            
+            if bot_message_deleted:
+                embed.add_field(
+                    name="🗑️ 消息清理",
+                    value="已自動刪除精選通知消息",
+                    inline=False
+                )
+            
+            embed.set_footer(text=f"留言ID: {self.message.id}")
+            
+            # 發送私密取消精選通知
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            logger.info(f"✅ 用戶 {self.message.author.display_name} 積分扣除完成 - 總積分: {new_points}")
+            logger.info(f"✅ 用戶 {interaction.user.name} 成功取消精選了 {self.message.author.display_name} 的留言")
+            
+        except Exception as e:
+            logger.error(f"確認取消精選時發生錯誤: {e}")
+            await interaction.response.send_message(
+                "❌ 取消精選過程中發生錯誤，請稍後重試。",
+                ephemeral=True
+            )
+    
+    @discord.ui.button(label="❌ 取消操作", style=discord.ButtonStyle.secondary, emoji="🚫")
+    async def cancel_unfeature(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """取消操作"""
+        embed = discord.Embed(
+            title="❌ 操作已取消",
+            description="取消精選操作已被取消",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class FeatureMessageModal(discord.ui.Modal):
     """精選留言的互動表單"""
@@ -1542,51 +1657,42 @@ class FeaturedCommands(commands.Cog):
                 await interaction.response.send_message("❌ 找不到該留言的精選記錄！", ephemeral=True)
                 return
             
-            # 創建取消精選通知
+            # 創建確認取消精選通知
             embed = discord.Embed(
-                title="❌ 取消精選",
-                description=f"{message.author.display_name} 的留言已取消精選！",
-                color=discord.Color.red(),
+                title="⚠️ 確認取消精選",
+                description=f"您即將取消 {message.author.display_name} 留言的精選狀態",
+                color=discord.Color.orange(),
                 timestamp=discord.utils.utcnow()
             )
             
             embed.add_field(
-                name="取消精選的留言",
-                value=f"[點擊查看]({message.jump_url})",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="操作者",
-                value=interaction.user.display_name,
+                name="被取消精選的用戶",
+                value=message.author.display_name,
                 inline=True
             )
             
-            embed.set_footer(text=f"留言ID: {message.id}")
-            
-            # 發送私密取消精選通知
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-            # 從數據庫中移除精選記錄
-            success = self.db.remove_featured_message(message.id, thread_id)
-            
-            if not success:
-                await interaction.followup.send("❌ 取消精選失敗，請稍後重試。", ephemeral=True)
-                return
-            
-            # 扣除用戶積分（總積分）
-            logger.info(f"🎯 扣除用戶 {message.author.display_name} (ID: {message.author.id}) {config.POINTS_PER_FEATURE} 積分")
-            new_points = self.db.add_user_points(
-                user_id=message.author.id,
-                username=message.author.display_name,
-                points=-config.POINTS_PER_FEATURE,  # 負數表示扣除
-                guild_id=interaction.guild_id
+            embed.add_field(
+                name="留言連結",
+                value=f"[點擊查看]({message.jump_url})",
+                inline=True
             )
             
-            logger.info(f"✅ 用戶 {message.author.display_name} 積分扣除完成 - 總積分: {new_points}")
+            embed.add_field(
+                name="⚠️ 操作後果",
+                value=f"• {message.author.display_name} 的積分將減少 {config.POINTS_PER_FEATURE} 分\n"
+                      f"• 精選記錄將從數據庫中永久刪除\n"
+                      f"• 機器人的精選通知消息將被自動刪除\n"
+                      f"• **此操作不可撤銷，請謹慎操作**",
+                inline=False
+            )
             
-            # 記錄成功
-            logger.info(f"✅ 用戶 {interaction.user.name} 成功取消精選了 {message.author.display_name} 的留言")
+            embed.set_footer(text=f"留言ID: {message.id} | 60秒後自動取消")
+            
+            # 創建確認視圖
+            view = UnfeatureConfirmView(message, thread_id, self.bot, self.db)
+            
+            # 發送確認消息
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             logger.error(f"右鍵取消精選留言時發生錯誤: {e}")
