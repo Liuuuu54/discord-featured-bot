@@ -129,30 +129,7 @@ def check_database(simple_mode=False):
         except sqlite3.OperationalError:
             print("❌ 用戶積分表格不存在")
         
-        # 月度積分排行榜
-        print_separator("🏆 月度積分排行榜")
-        try:
-            cursor.execute("""
-                SELECT guild_id, user_id, username, points, year_month
-                FROM monthly_points 
-                ORDER BY guild_id, points DESC 
-                LIMIT 20
-            """)
-            monthly_ranking = cursor.fetchall()
-            
-            if monthly_ranking:
-                current_guild = None
-                for guild_id, user_id, username, points, year_month in monthly_ranking:
-                    if guild_id != current_guild:
-                        current_guild = guild_id
-                        print(f"\n🏠 群組 {guild_id} ({year_month}):")
-                    
-                    print(f"  - {username} (ID: {user_id}) - {points} 分")
-            else:
-                print("📝 還沒有月度積分記錄")
-                    
-        except sqlite3.OperationalError:
-            print("❌ 月度積分表格不存在")
+
         
         # 精選記錄統計
         print_separator("🌟 精選記錄統計")
@@ -205,7 +182,6 @@ def interactive_mode():
                 elif query.lower() == 'help':
                     print("\n📖 常用查詢範例:")
                     print("  SELECT * FROM user_points LIMIT 5;")
-                    print("  SELECT * FROM monthly_points ORDER BY points DESC LIMIT 10;")
                     print("  SELECT * FROM featured_messages LIMIT 5;")
                     print("  SELECT COUNT(*) FROM user_points;")
                     print("\n🌐 多群組查詢:")
@@ -273,18 +249,7 @@ def check_guild_data(guild_id=None):
         for user_id, username, points in user_points[:10]:
             print(f"  - {username} (ID: {user_id}): {points} 分")
         
-        # 月度積分
-        cursor.execute("""
-            SELECT user_id, username, points, year_month
-            FROM monthly_points 
-            WHERE guild_id = ? 
-            ORDER BY points DESC
-        """, (guild_id,))
-        monthly_points = cursor.fetchall()
-        
-        print(f"\n📅 月度積分 ({len(monthly_points)} 記錄):")
-        for user_id, username, points, year_month in monthly_points[:10]:
-            print(f"  - {username} (ID: {user_id}): {points} 分 ({year_month})")
+
         
         # 精選記錄
         cursor.execute("""

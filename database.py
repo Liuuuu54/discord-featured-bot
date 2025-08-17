@@ -26,20 +26,7 @@ class DatabaseManager:
             )
         ''')
         
-        # 创建月度积分表 (支持多群组)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS monthly_points (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                guild_id INTEGER NOT NULL,
-                username TEXT NOT NULL,
-                points INTEGER DEFAULT 0,
-                year_month TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, guild_id, year_month)
-            )
-        ''')
+
         
         # 创建精選记录表 (支持多群组)
         cursor.execute('''
@@ -61,7 +48,6 @@ class DatabaseManager:
         
         # 添加索引以提高查询性能
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_points_guild ON user_points(guild_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_monthly_points_guild ON monthly_points(guild_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_featured_messages_guild ON featured_messages(guild_id)')
         
         conn.commit()
@@ -177,13 +163,7 @@ class DatabaseManager:
                     WHERE user_id = ? AND guild_id = ?
                 ''', (featured_info['author_id'], featured_info['guild_id']))
                 
-                # 3. 减少被精選用户的月度积分
-                year_month = self.get_current_month()
-                cursor.execute('''
-                    UPDATE monthly_points 
-                    SET points = points - 1, updated_at = CURRENT_TIMESTAMP
-                    WHERE user_id = ? AND guild_id = ? AND year_month = ?
-                ''', (featured_info['author_id'], featured_info['guild_id'], year_month))
+
                 
                 # 提交事务
                 cursor.execute('COMMIT')
@@ -367,71 +347,7 @@ class DatabaseManager:
         
         return records, total_pages
 
-    def get_current_month(self) -> str:
-        """获取当前年月"""
-        return datetime.now().strftime('%Y-%m')
-    
-    def add_monthly_points(self, user_id: int, username: str, points: int, guild_id: int) -> int:
-        """给用户在指定群组添加月度积分"""
-        conn = sqlite3.connect(self.db_file)
-        cursor = conn.cursor()
-        
-        year_month = self.get_current_month()
-        
-        # 检查是否已存在月度积分记录
-        cursor.execute('''
-            SELECT points FROM monthly_points 
-            WHERE user_id = ? AND guild_id = ? AND year_month = ?
-        ''', (user_id, guild_id, year_month))
-        
-        existing = cursor.fetchone()
-        
-        if existing:
-            # 更新现有记录
-            new_points = existing[0] + points
-            cursor.execute('''
-                UPDATE monthly_points 
-                SET points = ?, username = ?, updated_at = CURRENT_TIMESTAMP 
-                WHERE user_id = ? AND guild_id = ? AND year_month = ?
-            ''', (new_points, username, user_id, guild_id, year_month))
-        else:
-            # 创建新记录
-            new_points = points
-            cursor.execute('''
-                INSERT INTO monthly_points (user_id, guild_id, username, points, year_month)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (user_id, guild_id, username, new_points, year_month))
-        
-        conn.commit()
-        conn.close()
-        return new_points
-    
-    def get_monthly_ranking(self, guild_id: int, limit: int = 10) -> List[Dict]:
-        """获取指定群组的月度积分排行榜"""
-        conn = sqlite3.connect(self.db_file)
-        cursor = conn.cursor()
-        
-        year_month = self.get_current_month()
-        
-        cursor.execute('''
-            SELECT user_id, username, points
-            FROM monthly_points 
-            WHERE guild_id = ? AND year_month = ?
-            ORDER BY points DESC
-            LIMIT ?
-        ''', (guild_id, year_month, limit))
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        return [
-            {
-                'user_id': row[0],
-                'username': row[1],
-                'points': row[2]
-            }
-            for row in results
-        ]
+
     
     def get_total_ranking(self, guild_id: int, page: int = 1, per_page: int = 20, start_date: str = None, end_date: str = None) -> Tuple[List[Dict], int]:
         """获取指定群组的总积分排行榜（分页，支持时间范围）"""
@@ -481,83 +397,13 @@ class DatabaseManager:
             for row in results
         ], total_pages
     
-    def get_user_monthly_points(self, user_id: int, guild_id: int) -> int:
-        """获取用户在指定群组的月度积分"""
-        conn = sqlite3.connect(self.db_file)
-        cursor = conn.cursor()
-        
-        year_month = self.get_current_month()
-        
-        cursor.execute('''
-            SELECT points FROM monthly_points 
-            WHERE user_id = ? AND guild_id = ? AND year_month = ?
-        ''', (user_id, guild_id, year_month))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        return result[0] if result else 0
-    
-    def clear_monthly_points(self, year_month: str = None, guild_id: int = None) -> bool:
-        """清除月度积分"""
-        try:
-            conn = sqlite3.connect(self.db_file)
-            cursor = conn.cursor()
-            
-            if year_month is None:
-                year_month = self.get_current_month()
-            
-            if guild_id is None:
-                # 清除所有群组的月度积分
-                cursor.execute('DELETE FROM monthly_points WHERE year_month = ?', (year_month,))
-            else:
-                # 清除指定群组的月度积分
-                cursor.execute('DELETE FROM monthly_points WHERE year_month = ? AND guild_id = ?', (year_month, guild_id))
-            
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"清除月度积分时发生错误: {e}")
-            return False
+
 
     def get_message_preview(self, thread_id: int, message_id: int) -> str:
         """获取消息预览（这里返回一个简单的链接）"""
         return f"https://discord.com/channels/@me/{thread_id}/{message_id}" 
 
-    def get_monthly_ranking_paginated(self, guild_id: int, page: int = 1, per_page: int = 20):
-        """分页获取指定群组的月度积分排行榜"""
-        conn = sqlite3.connect(self.db_file)
-        cursor = conn.cursor()
-
-        year_month = self.get_current_month()
-
-        # 获取总记录数
-        cursor.execute('SELECT COUNT(*) FROM monthly_points WHERE guild_id = ? AND year_month = ?', (guild_id, year_month))
-        total_records = cursor.fetchone()[0]
-        total_pages = (total_records + per_page - 1) // per_page
-
-        # 获取当前页数据
-        offset = (page - 1) * per_page
-        cursor.execute('''
-            SELECT user_id, username, points
-            FROM monthly_points 
-            WHERE guild_id = ? AND year_month = ?
-            ORDER BY points DESC
-            LIMIT ? OFFSET ?
-        ''', (guild_id, year_month, per_page, offset))
-
-        results = cursor.fetchall()
-        conn.close()
-
-        return [
-            {
-                'user_id': row[0],
-                'username': row[1],
-                'points': row[2]
-            }
-            for row in results
-        ], total_pages 
+ 
 
     def get_referral_ranking(self, guild_id: int, page: int = 1, per_page: int = 20, start_date: str = None, end_date: str = None) -> Tuple[List[Dict], int]:
         """获取指定群组的引荐人数排行榜（分页，支持时间范围）"""

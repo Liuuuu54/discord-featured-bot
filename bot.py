@@ -21,11 +21,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger('discord')
 
-class FeatureMessageModal(discord.ui.Modal, title="🌟 精選留言"):
+class FeatureMessageModal(discord.ui.Modal):
     """精選留言的互動表單"""
     
     def __init__(self, message: discord.Message, thread_id: int, bot, db):
-        super().__init__()
+        # 動態設置標題，包含說明信息
+        title = f"🌟 精選留言 - {message.author.display_name}"
+        super().__init__(title=title)
         self.message = message
         self.thread_id = thread_id
         self.bot = bot
@@ -40,27 +42,15 @@ class FeatureMessageModal(discord.ui.Modal, title="🌟 精選留言"):
             style=discord.TextStyle.paragraph
         )
         
-        # 說明文字
-        self.description = discord.ui.TextInput(
-            label="📋 精選說明",
-            placeholder=f"精選 {message.author.display_name} 的留言",
+        # 精選原因輸入框
+        self.reason = discord.ui.TextInput(
+            label="精選原因",
+            placeholder="請輸入精選原因（可選）",
             required=False,
-            max_length=1000,
-            style=discord.TextStyle.paragraph,
-            default=f"""🌟 精選效果：
-• {message.author.display_name} 將獲得 {config.POINTS_PER_FEATURE} 積分
-
-📋 精選限制：
-• 每個帖子中只能精選每位用戶一次
-• 不能精選自己的留言
-• 留言內容至少需要 {config.MIN_MESSAGE_LENGTH} 個字符
-• 不能精選只包含表情符號的留言
-• 不能精選 bot 消息或系統消息
-
-💡 提示：提交後會自動檢查留言內容質量"""
+            max_length=500,
+            style=discord.TextStyle.paragraph
         )
         
-        self.add_item(self.description)
         self.add_item(self.reason)
     
     async def on_submit(self, interaction: discord.Interaction):
@@ -150,15 +140,7 @@ class FeatureMessageModal(discord.ui.Modal, title="🌟 精選留言"):
                 guild_id=interaction.guild_id
             )
             
-            # 給用戶添加月度積分
-            new_monthly_points = self.db.add_monthly_points(
-                user_id=self.message.author.id,
-                username=self.message.author.display_name,
-                points=config.POINTS_PER_FEATURE,
-                guild_id=interaction.guild_id
-            )
-            
-            logger.info(f"✅ 用戶 {self.message.author.display_name} 積分更新完成 - 總積分: {new_points}, 月度積分: {new_monthly_points}")
+            logger.info(f"✅ 用戶 {self.message.author.display_name} 積分更新完成 - 總積分: {new_points}")
             
             # 記錄成功
             logger.info(f"✅ 用戶 {interaction.user.name} 成功精選了 {self.message.author.display_name} 的留言")
@@ -1409,6 +1391,14 @@ class FeaturedCommands(commands.Cog):
         )
         self.bot.tree.add_command(context_menu)
         logger.info(f"✅ 已註冊 Context Menu: {context_menu.name}")
+        
+        # 註冊取消精選 Context Menu
+        unfeature_menu = app_commands.ContextMenu(
+            name="取消精選",
+            callback=self.context_unfeature_message
+        )
+        self.bot.tree.add_command(unfeature_menu)
+        logger.info(f"✅ 已註冊 Context Menu: {unfeature_menu.name}")
     
     def extract_message_id_from_url(self, url: str) -> int:
         """从Discord消息URL中提取消息ID"""
@@ -1524,6 +1514,84 @@ class FeaturedCommands(commands.Cog):
             logger.error(f"右鍵精選留言時發生錯誤: {e}")
             await interaction.response.send_message(
                 "❌ 精選過程中發生錯誤，請稍後重試。",
+                ephemeral=True
+            )
+    
+    async def context_unfeature_message(self, interaction: discord.Interaction, message: discord.Message):
+        """Message Context Menu 取消精選留言回調"""
+        # 記錄命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了右鍵取消精選功能，留言ID: {message.id}")
+        
+        try:
+            # 檢查是否在帖子中
+            if not interaction.channel.type == discord.ChannelType.public_thread:
+                await interaction.response.send_message("❌ 此功能只能在帖子中使用！", ephemeral=True)
+                return
+            
+            thread_id = interaction.channel.id
+            thread_owner_id = interaction.channel.owner_id
+            
+            # 檢查是否為樓主
+            if interaction.user.id != thread_owner_id:
+                await interaction.response.send_message("❌ 只有樓主才能取消精選留言！", ephemeral=True)
+                return
+            
+            # 檢查精選記錄是否存在
+            featured_info = self.db.get_featured_message_by_id(message.id, thread_id)
+            if not featured_info:
+                await interaction.response.send_message("❌ 找不到該留言的精選記錄！", ephemeral=True)
+                return
+            
+            # 創建取消精選通知
+            embed = discord.Embed(
+                title="❌ 取消精選",
+                description=f"{message.author.display_name} 的留言已取消精選！",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="取消精選的留言",
+                value=f"[點擊查看]({message.jump_url})",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="操作者",
+                value=interaction.user.display_name,
+                inline=True
+            )
+            
+            embed.set_footer(text=f"留言ID: {message.id}")
+            
+            # 發送私密取消精選通知
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            # 從數據庫中移除精選記錄
+            success = self.db.remove_featured_message(message.id, thread_id)
+            
+            if not success:
+                await interaction.followup.send("❌ 取消精選失敗，請稍後重試。", ephemeral=True)
+                return
+            
+            # 扣除用戶積分（總積分）
+            logger.info(f"🎯 扣除用戶 {message.author.display_name} (ID: {message.author.id}) {config.POINTS_PER_FEATURE} 積分")
+            new_points = self.db.add_user_points(
+                user_id=message.author.id,
+                username=message.author.display_name,
+                points=-config.POINTS_PER_FEATURE,  # 負數表示扣除
+                guild_id=interaction.guild_id
+            )
+            
+            logger.info(f"✅ 用戶 {message.author.display_name} 積分扣除完成 - 總積分: {new_points}")
+            
+            # 記錄成功
+            logger.info(f"✅ 用戶 {interaction.user.name} 成功取消精選了 {message.author.display_name} 的留言")
+            
+        except Exception as e:
+            logger.error(f"右鍵取消精選留言時發生錯誤: {e}")
+            await interaction.response.send_message(
+                "❌ 取消精選過程中發生錯誤，請稍後重試。",
                 ephemeral=True
             )
     
@@ -1658,15 +1726,7 @@ class FeaturedCommands(commands.Cog):
                 guild_id=interaction.guild_id
             )
             
-            # 给用户添加月度积分
-            new_monthly_points = self.db.add_monthly_points(
-                user_id=message.author.id,
-                username=message.author.display_name,
-                points=config.POINTS_PER_FEATURE,
-                guild_id=interaction.guild_id
-            )
-            
-            logger.info(f"✅ 用户 {message.author.display_name} 积分更新完成 - 總積分: {new_points}, 月度積分: {new_monthly_points}")
+            logger.info(f"✅ 用户 {message.author.display_name} 积分更新完成 - 總積分: {new_points}")
             
         except Exception as e:
             logger.error(f"精选留言时发生错误: {e}")
@@ -1868,14 +1928,12 @@ class FeaturedCommands(commands.Cog):
             # 先準備好嵌入訊息，避免在發送回應後再調用異步方法
             embed = await view.get_records_embed()
             
-            # 獲取月度積分
-            monthly_points = self.db.get_user_monthly_points(user_id, interaction.guild_id)
+
             
             # 添加積分統計到嵌入訊息
             embed.add_field(
                 name="📈 積分統計",
                 value=f"**總積分**: {stats['points']} 積分\n"
-                      # f"**本月積分**: {monthly_points} 積分\n"
                       f"**被精选次数**: {stats['featured_count']} 次\n"
                       f"**引荐人数**: {stats['featuring_count']} 人",
                 inline=False
