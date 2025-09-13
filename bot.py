@@ -1381,7 +1381,23 @@ class AppreciatorApplicationView(discord.ui.View):
                 return
             
             # 检查是否已经有鉴赏家身份
-            member = interaction.guild.get_member(interaction.user.id)
+            # 使用 fetch_member 而不是 get_member，避免缓存问题
+            try:
+                member = await interaction.guild.fetch_member(interaction.user.id)
+            except discord.NotFound:
+                await interaction.response.send_message(
+                    "❌ 无法找到您的成员信息，请确认您在服务器中。",
+                    ephemeral=True
+                )
+                return
+            except discord.HTTPException as e:
+                logger.error(f"获取成员信息时发生HTTP错误: {e}")
+                await interaction.response.send_message(
+                    "❌ 获取成员信息时发生错误，请稍后重试。",
+                    ephemeral=True
+                )
+                return
+            
             if member:
                 for role in member.roles:
                     if role.name == config.APPRECIATOR_ROLE_NAME:
@@ -1432,6 +1448,14 @@ class AppreciatorApplicationView(discord.ui.View):
             
             # 分配角色
             try:
+                # 确认 appreciator_role 不为 None
+                if not appreciator_role:
+                    await interaction.response.send_message(
+                        f"❌ 无法找到或创建 {config.APPRECIATOR_ROLE_NAME} 角色，请联系管理员。",
+                        ephemeral=True
+                    )
+                    return
+                
                 await member.add_roles(appreciator_role, reason=f"用户申请{config.APPRECIATOR_ROLE_NAME}身份")
                 
                 # 记录申请成功
@@ -1514,6 +1538,14 @@ class FeaturedCommands(commands.Cog):
         )
         self.bot.tree.add_command(unfeature_menu)
         logger.info(f"✅ 已註冊 Context Menu: {unfeature_menu.name}")
+        
+        # 註冊查看積分 Context Menu
+        points_menu = app_commands.ContextMenu(
+            name="查看積分",
+            callback=self.context_check_points
+        )
+        self.bot.tree.add_command(points_menu)
+        logger.info(f"✅ 已註冊 Context Menu: {points_menu.name}")
     
     def extract_message_id_from_url(self, url: str) -> int:
         """从Discord消息URL中提取消息ID"""
@@ -1698,6 +1730,46 @@ class FeaturedCommands(commands.Cog):
             logger.error(f"右鍵取消精選留言時發生錯誤: {e}")
             await interaction.response.send_message(
                 "❌ 取消精選過程中發生錯誤，請稍後重試。",
+                ephemeral=True
+            )
+    
+    async def context_check_points(self, interaction: discord.Interaction, message: discord.Message):
+        """Message Context Menu 查看積分回調"""
+        # 記錄命令使用
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了右鍵查看積分功能，目標用戶: {message.author.display_name}")
+        
+        try:
+            # 獲取目標用戶（留言作者）
+            target_user = message.author
+            user_id = target_user.id
+            
+            # 獲取用戶統計信息
+            stats = self.db.get_user_stats(user_id, interaction.guild_id)
+            
+            # 創建分頁視圖（默認顯示被精選記錄）
+            view = FeaturedRecordsView(self.bot, user_id, interaction.guild_id, 1, "featured")
+            
+            # 先準備好嵌入訊息，避免在發送回應後再調用異步方法
+            embed = await view.get_records_embed()
+            
+            # 添加積分統計到嵌入訊息
+            embed.add_field(
+                name="📈 積分統計",
+                value=f"**總積分**: {stats['points']} 積分\n"
+                      f"**被精选次数**: {stats['featured_count']} 次\n"
+                      f"**引荐人数**: {stats['featuring_count']} 人",
+                inline=False
+            )
+            
+            embed.set_thumbnail(url=target_user.display_avatar.url)
+            
+            # 所有積分查看都使用 ephemeral=True，避免聊天頻道被塞爆
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"右鍵查看積分時發生錯誤: {e}")
+            await interaction.response.send_message(
+                "❌ 查看積分時發生錯誤，請稍後重試。",
                 ephemeral=True
             )
     
