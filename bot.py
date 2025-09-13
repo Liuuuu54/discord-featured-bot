@@ -1362,6 +1362,9 @@ class AppreciatorApplicationView(discord.ui.View):
     @discord.ui.button(label="申请鉴赏家身份", style=discord.ButtonStyle.success, emoji="📜")
     async def apply_appreciator(self, interaction: discord.Interaction, button: discord.ui.Button):
         """申请鉴赏家身份"""
+        # 立即响应交互，避免超时
+        await interaction.response.defer(ephemeral=True)
+        
         try:
             # 获取用户统计信息
             stats = self.bot.db.get_user_stats(interaction.user.id, interaction.guild_id)
@@ -1371,7 +1374,7 @@ class AppreciatorApplicationView(discord.ui.View):
             referrals_ok = stats['featuring_count'] >= config.APPRECIATOR_MIN_REFERRALS
             
             if not points_ok and not referrals_ok:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"❌ 申请条件不满足！\n"
                     f"需要满足以下条件之一：\n"
                     f"• 积分至少 {config.APPRECIATOR_MIN_POINTS} 分（您当前有 {stats['points']} 分）\n"
@@ -1385,14 +1388,14 @@ class AppreciatorApplicationView(discord.ui.View):
             try:
                 member = await interaction.guild.fetch_member(interaction.user.id)
             except discord.NotFound:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ 无法找到您的成员信息，请确认您在服务器中。",
                     ephemeral=True
                 )
                 return
             except discord.HTTPException as e:
                 logger.error(f"获取成员信息时发生HTTP错误: {e}")
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ 获取成员信息时发生错误，请稍后重试。",
                     ephemeral=True
                 )
@@ -1401,7 +1404,7 @@ class AppreciatorApplicationView(discord.ui.View):
             if member:
                 for role in member.roles:
                     if role.name == config.APPRECIATOR_ROLE_NAME:
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             f"❌ 您已经拥有 {config.APPRECIATOR_ROLE_NAME} 身份了！",
                             ephemeral=True
                         )
@@ -1443,14 +1446,14 @@ class AppreciatorApplicationView(discord.ui.View):
                         value="• 管理角色\n• 管理成员",
                         inline=False
                     )
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    await interaction.followup.send(embed=embed, ephemeral=True)
                     return
             
             # 分配角色
             try:
                 # 确认 appreciator_role 不为 None
                 if not appreciator_role:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"❌ 无法找到或创建 {config.APPRECIATOR_ROLE_NAME} 角色，请联系管理员。",
                         ephemeral=True
                     )
@@ -1486,7 +1489,7 @@ class AppreciatorApplicationView(discord.ui.View):
                     inline=False
                 )
                 
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 
             except discord.Forbidden:
                 embed = discord.Embed(
@@ -1508,12 +1511,12 @@ class AppreciatorApplicationView(discord.ui.View):
                     value="• 管理角色\n• 管理成员",
                     inline=False
                 )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
                 
         except Exception as e:
             logger.error(f"申请{config.APPRECIATOR_ROLE_NAME}身份时发生错误: {e}")
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ 申请过程中发生错误，请稍后重试。",
                 ephemeral=True
             )
