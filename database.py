@@ -13,21 +13,6 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
-        # 创建用户积分表 (支持多群组)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_points (
-                user_id INTEGER NOT NULL,
-                guild_id INTEGER NOT NULL,
-                username TEXT NOT NULL,
-                points INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, guild_id)
-            )
-        ''')
-        
-
-        
         # 创建精選记录表 (支持多群组)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS featured_messages (
@@ -47,51 +32,10 @@ class DatabaseManager:
         ''')
         
         # 添加索引以提高查询性能
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_points_guild ON user_points(guild_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_featured_messages_guild ON featured_messages(guild_id)')
         
         conn.commit()
         conn.close()
-    
-    def get_user_points(self, user_id: int, guild_id: int) -> int:
-        """获取用户在指定群组的积分"""
-        conn = sqlite3.connect(self.db_file)
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT points FROM user_points WHERE user_id = ? AND guild_id = ?', (user_id, guild_id))
-        result = cursor.fetchone()
-        
-        conn.close()
-        return result[0] if result else 0
-    
-    def add_user_points(self, user_id: int, username: str, points: int, guild_id: int) -> int:
-        """给用户在指定群组添加积分"""
-        conn = sqlite3.connect(self.db_file)
-        cursor = conn.cursor()
-        
-        # 检查用户是否存在
-        cursor.execute('SELECT points FROM user_points WHERE user_id = ? AND guild_id = ?', (user_id, guild_id))
-        result = cursor.fetchone()
-        
-        if result:
-            # 用户存在，更新积分
-            new_points = result[0] + points
-            cursor.execute('''
-                UPDATE user_points 
-                SET points = ?, username = ?, updated_at = CURRENT_TIMESTAMP 
-                WHERE user_id = ? AND guild_id = ?
-            ''', (new_points, username, user_id, guild_id))
-        else:
-            # 用户不存在，创建新记录
-            new_points = points
-            cursor.execute('''
-                INSERT INTO user_points (user_id, guild_id, username, points)
-                VALUES (?, ?, ?, ?)
-            ''', (user_id, guild_id, username, new_points))
-        
-        conn.commit()
-        conn.close()
-        return new_points
     
     def is_already_featured(self, thread_id: int, author_id: int) -> bool:
         """检查用户在指定帖子中是否已经被精選过"""
@@ -107,7 +51,7 @@ class DatabaseManager:
         conn.close()
         
         return result is not None
-    
+
     def get_featured_message_by_id(self, message_id: int, thread_id: int) -> Dict:
         """根据留言ID和帖子ID获取精選记录"""
         conn = sqlite3.connect(self.db_file)
@@ -135,7 +79,7 @@ class DatabaseManager:
         return None
     
     def remove_featured_message(self, message_id: int, thread_id: int) -> bool:
-        """移除精選记录并更新相关积分"""
+        """移除精選记录并清理相关数据"""
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
@@ -155,15 +99,6 @@ class DatabaseManager:
                     DELETE FROM featured_messages 
                     WHERE message_id = ? AND thread_id = ?
                 ''', (message_id, thread_id))
-                
-                # 2. 减少被精選用户的积分
-                cursor.execute('''
-                    UPDATE user_points 
-                    SET points = points - 1, updated_at = CURRENT_TIMESTAMP
-                    WHERE user_id = ? AND guild_id = ?
-                ''', (featured_info['author_id'], featured_info['guild_id']))
-                
-
                 
                 # 提交事务
                 cursor.execute('COMMIT')
@@ -208,11 +143,16 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         
-        # 获取积分和用户名
-        cursor.execute('SELECT points, username FROM user_points WHERE user_id = ? AND guild_id = ?', (user_id, guild_id))
-        points_result = cursor.fetchone()
-        points = points_result[0] if points_result else 0
-        username = points_result[1] if points_result else None
+        # 获取用户名（从featured_messages表）
+        # 先找作为被引荐人的名字
+        cursor.execute('SELECT author_name FROM featured_messages WHERE author_id = ? AND guild_id = ? LIMIT 1', (user_id, guild_id))
+        name_result = cursor.fetchone()
+        if not name_result:
+            # 否则找作为引荐人的名字
+            cursor.execute('SELECT featured_by_name FROM featured_messages WHERE featured_by_id = ? AND guild_id = ? LIMIT 1', (user_id, guild_id))
+            name_result = cursor.fetchone()
+        
+        username = name_result[0] if name_result else f"用户{user_id}"
         
         # 获取被精選次数 (仅限当前群组)
         cursor.execute('''
@@ -229,7 +169,6 @@ class DatabaseManager:
         conn.close()
         
         return {
-            'points': points,
             'username': username,
             'featured_count': featured_count,
             'featuring_count': featuring_count
@@ -348,56 +287,6 @@ class DatabaseManager:
         return records, total_pages
 
 
-    
-    def get_total_ranking(self, guild_id: int, page: int = 1, per_page: int = 20, start_date: str = None, end_date: str = None) -> Tuple[List[Dict], int]:
-        """获取指定群组的总积分排行榜（分页，支持时间范围）"""
-        conn = sqlite3.connect(self.db_file)
-        cursor = conn.cursor()
-        
-        # 构建查询条件
-        where_conditions = ["guild_id = ?"]
-        params = [guild_id]
-        
-        if start_date:
-            where_conditions.append("created_at >= ?")
-            params.append(start_date)
-        
-        if end_date:
-            where_conditions.append("created_at <= ?")
-            params.append(end_date)
-        
-        where_clause = " AND ".join(where_conditions)
-        
-        # 获取总记录数
-        cursor.execute(f'SELECT COUNT(*) FROM user_points WHERE {where_clause}', params)
-        total_records = cursor.fetchone()[0]
-        
-        # 计算总页数
-        total_pages = (total_records + per_page - 1) // per_page
-        
-        # 获取当前页数据
-        offset = (page - 1) * per_page
-        cursor.execute(f'''
-            SELECT user_id, username, points
-            FROM user_points 
-            WHERE {where_clause}
-            ORDER BY points DESC
-            LIMIT ? OFFSET ?
-        ''', params + [per_page, offset])
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        return [
-            {
-                'user_id': row[0],
-                'username': row[1],
-                'points': row[2]
-            }
-            for row in results
-        ], total_pages
-    
-
 
     def get_message_preview(self, thread_id: int, message_id: int) -> str:
         """获取消息预览（这里返回一个简单的链接）"""
@@ -455,25 +344,14 @@ class DatabaseManager:
         for row in results:
             user_id = row[0]
             referral_count = row[1]
-            
-            # 获取用户名（从user_points表或featured_messages表）
+            # 从featured_messages表获取用户名
             cursor.execute('''
-                SELECT username FROM user_points 
-                WHERE user_id = ? AND guild_id = ?
+                SELECT featured_by_name FROM featured_messages 
+                WHERE featured_by_id = ? AND guild_id = ?
+                LIMIT 1
             ''', (user_id, guild_id))
-            username_result = cursor.fetchone()
-            
-            if username_result:
-                username = username_result[0]
-            else:
-                # 如果user_points表中没有，从featured_messages表获取
-                cursor.execute('''
-                    SELECT featured_by_name FROM featured_messages 
-                    WHERE featured_by_id = ? AND guild_id = ?
-                    LIMIT 1
-                ''', (user_id, guild_id))
-                name_result = cursor.fetchone()
-                username = name_result[0] if name_result else f"用户{user_id}"
+            name_result = cursor.fetchone()
+            username = name_result[0] if name_result else f"用户{user_id}"
             
             ranking_data.append({
                 'user_id': user_id,

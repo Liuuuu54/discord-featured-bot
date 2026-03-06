@@ -67,15 +67,6 @@ class UnfeatureConfirmView(discord.ui.View):
                 await interaction.response.send_message("❌ 取消精選失敗，請稍後重試。", ephemeral=True)
                 return
             
-            # 扣除用戶積分
-            logger.info(f"🎯 扣除用戶 {self.message.author.display_name} (ID: {self.message.author.id}) {config.POINTS_PER_FEATURE} 積分")
-            new_points = self.db.add_user_points(
-                user_id=self.message.author.id,
-                username=self.message.author.display_name,
-                points=-config.POINTS_PER_FEATURE,  # 負數表示扣除
-                guild_id=interaction.guild_id
-            )
-            
             # 創建成功消息
             embed = discord.Embed(
                 title="✅ 精選已取消",
@@ -96,11 +87,7 @@ class UnfeatureConfirmView(discord.ui.View):
                 inline=True
             )
             
-            embed.add_field(
-                name="積分變更",
-                value=f"{featured_info['author_name']} 的積分已減少 {config.POINTS_PER_FEATURE} 分",
-                inline=False
-            )
+
             
             if bot_message_deleted:
                 embed.add_field(
@@ -113,8 +100,6 @@ class UnfeatureConfirmView(discord.ui.View):
             
             # 發送私密取消精選通知
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-            logger.info(f"✅ 用戶 {self.message.author.display_name} 積分扣除完成 - 總積分: {new_points}")
             logger.info(f"✅ 用戶 {interaction.user.name} 成功取消精選了 {self.message.author.display_name} 的留言")
             
         except Exception as e:
@@ -246,17 +231,6 @@ class FeatureMessageModal(discord.ui.Modal):
                 await interaction.followup.send("❌ 精選失敗，該用戶可能已經被精選過了。", ephemeral=True)
                 return
             
-            # 給用戶添加積分（總積分）
-            logger.info(f"🎯 給用戶 {self.message.author.display_name} (ID: {self.message.author.id}) 添加 {config.POINTS_PER_FEATURE} 積分")
-            new_points = self.db.add_user_points(
-                user_id=self.message.author.id,
-                username=self.message.author.display_name,
-                points=config.POINTS_PER_FEATURE,
-                guild_id=interaction.guild_id
-            )
-            
-            logger.info(f"✅ 用戶 {self.message.author.display_name} 積分更新完成 - 總積分: {new_points}")
-            
             # 記錄成功
             logger.info(f"✅ 用戶 {interaction.user.name} 成功精選了 {self.message.author.display_name} 的留言")
             
@@ -298,7 +272,7 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精选, /积分, /帖子统计, /总排行, /鉴赏申请窗口, /全服精选列表')
+        logger.info('📋 可用命令: /精选, /精选紀錄, /帖子统计, /總排行, /鑒賞申請窗口, /全服精选列表')
         logger.info('=' * 50)
     
     async def on_command_error(self, ctx, error):
@@ -520,51 +494,34 @@ class FeaturedRecordsView(discord.ui.View):
             await interaction.response.send_message("✅ 當前已是引薦記錄模式", ephemeral=True)
 
 class EnhancedRankingView(discord.ui.View):
-    """增强排行榜视图 - 支持积分排行和引荐人数排行切换，支持时间范围"""
-    def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1, ranking_type: str = "points", start_date: str = None, end_date: str = None):
+    """增强排行榜视图 - 支持引荐人数排行，支持时间范围"""
+    def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1, start_date: str = None, end_date: str = None):
         super().__init__(timeout=config.VIEW_TIMEOUT)  # 使用配置的超時時間
         self.bot = bot
         self.guild_id = guild_id
         self.current_page = current_page
         self.per_page = config.RANKING_PER_PAGE
-        self.ranking_type = ranking_type  # "points" 或 "referral"
+        self.per_page = config.RANKING_PER_PAGE
         self.start_date = start_date
         self.end_date = end_date
     
     async def get_ranking_embed(self) -> discord.Embed:
         """獲取當前頁面的排行榜嵌入訊息"""
-        if self.ranking_type == "points":
-            # 獲取積分排行榜數據
-            ranking_data, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
-            title = "🏆 總積分排行榜"
-            
-            # 根据时间范围调整描述
-            if self.start_date and self.end_date:
-                description = f"時間範圍: {self.start_date} 至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
-            elif self.start_date:
-                description = f"時間範圍: {self.start_date} 至今 • 第 {self.current_page} 頁，共 {total_pages} 頁"
-            elif self.end_date:
-                description = f"時間範圍: 開始至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
-            else:
-                description = f"所有時間的積分統計 • 第 {self.current_page} 頁，共 {total_pages} 頁"
-            
-            empty_description = "還沒有積分記錄"
+        # 獲取引薦人數排行榜數據
+        ranking_data, total_pages = self.bot.db.get_referral_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
+        title = "👥 引薦人數排行榜"
+        
+        # 根据时间范围调整描述
+        if self.start_date and self.end_date:
+            description = f"時間範圍: {self.start_date} 至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
+        elif self.start_date:
+            description = f"時間範圍: {self.start_date} 至今 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+        elif self.end_date:
+            description = f"時間範圍: 開始至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
         else:
-            # 獲取引薦人數排行榜數據
-            ranking_data, total_pages = self.bot.db.get_referral_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
-            title = "👥 引薦人數排行榜"
-            
-            # 根据时间范围调整描述
-            if self.start_date and self.end_date:
-                description = f"時間範圍: {self.start_date} 至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
-            elif self.start_date:
-                description = f"時間範圍: {self.start_date} 至今 • 第 {self.current_page} 頁，共 {total_pages} 頁"
-            elif self.end_date:
-                description = f"時間範圍: 開始至 {self.end_date} • 第 {self.current_page} 頁，共 {total_pages} 頁"
-            else:
-                description = f"精選留言引薦統計 • 第 {self.current_page} 頁，共 {total_pages} 頁"
-            
-            empty_description = "還沒有引薦記錄"
+            description = f"精選留言引薦統計 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+        
+        empty_description = "還沒有引薦記錄"
         
         if not ranking_data:
             embed = discord.Embed(
@@ -593,10 +550,7 @@ class EnhancedRankingView(discord.ui.View):
             # 計算實際排名
             actual_rank = start_rank + i
             
-            if self.ranking_type == "points":
-                value = f"積分: {rank_info['points']} 分"
-            else:
-                value = f"引薦人數: {rank_info['referral_count']} 人"
+            value = f"引薦人數: {rank_info['referral_count']} 人"
             
             embed.add_field(
                 name=f"{actual_rank}. {username}",
@@ -635,10 +589,7 @@ class EnhancedRankingView(discord.ui.View):
     
     @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.ranking_type == "points":
-            _, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
-        else:
-            _, total_pages = self.bot.db.get_referral_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
+        _, total_pages = self.bot.db.get_referral_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
         
         if self.current_page < total_pages:
             self.current_page += 1
@@ -647,129 +598,16 @@ class EnhancedRankingView(discord.ui.View):
     
     @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
     async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.ranking_type == "points":
-            _, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
-        else:
-            _, total_pages = self.bot.db.get_referral_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
+        _, total_pages = self.bot.db.get_referral_ranking(self.guild_id, self.current_page, self.per_page, self.start_date, self.end_date)
         
         self.current_page = total_pages
         embed = await self.get_ranking_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    @discord.ui.button(label="積分排行", style=discord.ButtonStyle.success, emoji="🏆")
-    async def switch_to_points(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.ranking_type != "points":
-            self.ranking_type = "points"
-            self.current_page = 1  # 重置到第一頁
-            embed = await self.get_ranking_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
-        else:
-            await interaction.response.send_message("✅ 當前已是積分排行模式", ephemeral=True)
-    
-    @discord.ui.button(label="引薦排行", style=discord.ButtonStyle.success, emoji="👥")
+    # 移除積分排行按鈕，僅保留引薦排行
+    @discord.ui.button(label="引薦排行", style=discord.ButtonStyle.success, emoji="👥", disabled=True)
     async def switch_to_referral(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.ranking_type != "referral":
-            self.ranking_type = "referral"
-            self.current_page = 1  # 重置到第一頁
-            embed = await self.get_ranking_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
-        else:
-            await interaction.response.send_message("✅ 當前已是引薦排行模式", ephemeral=True)
-
-class TotalRankingView(discord.ui.View):
-    """總排行榜分頁視圖"""
-    def __init__(self, bot: FeaturedMessageBot, guild_id: int, current_page: int = 1):
-        super().__init__(timeout=config.VIEW_TIMEOUT)  # 使用配置的超時時間
-        self.bot = bot
-        self.guild_id = guild_id
-        self.current_page = current_page
-        self.per_page = config.RANKING_PER_PAGE
-    
-    async def get_ranking_embed(self) -> discord.Embed:
-        """獲取當前頁面的排行榜嵌入訊息"""
-        # 獲取排行榜數據
-        ranking_data, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page)
-        
-        if not ranking_data:
-            embed = discord.Embed(
-                title="🏆 總積分排行榜",
-                description="還沒有積分記錄",
-                color=0x00ff00,
-                timestamp=discord.utils.utcnow()
-            )
-            return embed
-        
-        # 計算當前頁的起始排名
-        start_rank = (self.current_page - 1) * self.per_page + 1
-        
-        embed = discord.Embed(
-            title="🏆 總積分排行榜",
-            description=f"所有時間的積分統計 • 第 {self.current_page} 頁，共 {total_pages} 頁",
-            color=0x00ff00,
-            timestamp=discord.utils.utcnow()
-        )
-        
-        for i, rank_info in enumerate(ranking_data):
-            # 獲取用戶資訊
-            user = self.bot.get_user(rank_info['user_id'])
-            username = user.display_name if user else rank_info['username']
-            
-            # 計算實際排名
-            actual_rank = start_rank + i
-            
-            embed.add_field(
-                name=f"{actual_rank}. {username}",
-                value=f"積分: {rank_info['points']} 分",
-                inline=False
-            )
-        
-        # 更新按鈕狀態
-        self.update_buttons(total_pages)
-        
-        return embed
-    
-    def update_buttons(self, total_pages: int):
-        """更新按鈕狀態"""
-        # 第一頁按鈕
-        self.children[0].disabled = self.current_page <= 1
-        # 上一頁按鈕
-        self.children[1].disabled = self.current_page <= 1
-        # 下一頁按鈕
-        self.children[2].disabled = self.current_page >= total_pages
-        # 最後一頁按鈕
-        self.children[3].disabled = self.current_page >= total_pages
-    
-    @discord.ui.button(label="第一頁", style=discord.ButtonStyle.gray, emoji="⏮️")
-    async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.current_page = 1
-        embed = await self.get_ranking_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-    
-    @discord.ui.button(label="上一頁", style=discord.ButtonStyle.primary, emoji="◀️")
-    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.current_page > 1:
-            self.current_page -= 1
-            embed = await self.get_ranking_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
-    
-    @discord.ui.button(label="下一頁", style=discord.ButtonStyle.primary, emoji="▶️")
-    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        _, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page)
-        
-        if self.current_page < total_pages:
-            self.current_page += 1
-            embed = await self.get_ranking_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
-    
-    @discord.ui.button(label="最後一頁", style=discord.ButtonStyle.gray, emoji="⏭️")
-    async def last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        _, total_pages = self.bot.db.get_total_ranking(self.guild_id, self.current_page, self.per_page)
-        
-        self.current_page = total_pages
-        embed = await self.get_ranking_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-
-
+        await interaction.response.send_message("✅ 當前已是引薦排行模式", ephemeral=True)
 
 class ThreadStatsView(discord.ui.View):
     """帖子統計分頁視圖"""
@@ -1369,15 +1207,15 @@ class AppreciatorApplicationView(discord.ui.View):
             # 获取用户统计信息
             stats = self.bot.db.get_user_stats(interaction.user.id, interaction.guild_id)
             
-            # 检查积分或引荐人数要求（满足其中一个即可）
-            points_ok = stats['points'] >= config.APPRECIATOR_MIN_POINTS
+            # 检查被引荐人数或引荐人数要求（满足其中一个即可）
+            featured_ok = stats['featured_count'] >= config.APPRECIATOR_MIN_FEATURED
             referrals_ok = stats['featuring_count'] >= config.APPRECIATOR_MIN_REFERRALS
             
-            if not points_ok and not referrals_ok:
+            if not featured_ok and not referrals_ok:
                 await interaction.followup.send(
                     f"❌ 申请条件不满足！\n"
                     f"需要满足以下条件之一：\n"
-                    f"• 积分至少 {config.APPRECIATOR_MIN_POINTS} 分（您当前有 {stats['points']} 分）\n"
+                    f"• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次（您当前被引荐了 {stats['featured_count']} 次）\n"
                     f"• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人（您当前引荐了 {stats['featuring_count']} 人）",
                     ephemeral=True
                 )
@@ -1473,19 +1311,19 @@ class AppreciatorApplicationView(discord.ui.View):
                 )
                 embed.add_field(
                     name="📊 您的成就",
-                    value=f"**总积分**: {stats['points']} 分\n**引荐人数**: {stats['featuring_count']} 人",
+                    value=f"**引荐人数**: {stats['featuring_count']} 人",
                     inline=False
                 )
                 # 显示用户满足的条件
                 conditions_met = []
-                if points_ok:
-                    conditions_met.append(f"✅ 积分 {stats['points']} 分（满足 {config.APPRECIATOR_MIN_POINTS} 分要求）")
-                if referrals_ok:
+                if stats['featured_count'] >= config.APPRECIATOR_MIN_FEATURED:
+                    conditions_met.append(f"✅ 被引荐 {stats['featured_count']} 次（满足 {config.APPRECIATOR_MIN_FEATURED} 次要求）")
+                if stats['featuring_count'] >= config.APPRECIATOR_MIN_REFERRALS:
                     conditions_met.append(f"✅ 引荐 {stats['featuring_count']} 人（满足 {config.APPRECIATOR_MIN_REFERRALS} 人要求）")
                 
                 embed.add_field(
                     name="🎯 申请条件",
-                    value=f"**满足条件**：\n" + "\n".join(conditions_met) + f"\n\n**完整要求**：\n• 积分至少 {config.APPRECIATOR_MIN_POINTS} 分\n• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人",
+                    value=f"**满足条件**：\n" + "\n".join(conditions_met) + f"\n\n**完整要求（满足其一即可）**：\n• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次\n• 引荐至少 {config.APPRECIATOR_MIN_REFERRALS} 人",
                     inline=False
                 )
                 
@@ -1542,10 +1380,10 @@ class FeaturedCommands(commands.Cog):
         self.bot.tree.add_command(unfeature_menu)
         logger.info(f"✅ 已註冊 Context Menu: {unfeature_menu.name}")
         
-        # 註冊查看積分 Context Menu
+        # 註冊查看精選紀錄 Context Menu
         points_menu = app_commands.ContextMenu(
-            name="查看積分",
-            callback=self.context_check_points
+            name="查看精選紀錄",
+            callback=self.context_check_featured_stats
         )
         self.bot.tree.add_command(points_menu)
         logger.info(f"✅ 已註冊 Context Menu: {points_menu.name}")
@@ -1714,8 +1552,7 @@ class FeaturedCommands(commands.Cog):
             
             embed.add_field(
                 name="⚠️ 操作後果",
-                value=f"• {message.author.display_name} 的積分將減少 {config.POINTS_PER_FEATURE} 分\n"
-                      f"• 精選記錄將從數據庫中永久刪除\n"
+                value=f"• 精選記錄將從數據庫中永久刪除\n"
                       f"• 機器人的精選通知消息將被自動刪除\n"
                       f"• **此操作不可撤銷，請謹慎操作**",
                 inline=False
@@ -1736,10 +1573,10 @@ class FeaturedCommands(commands.Cog):
                 ephemeral=True
             )
     
-    async def context_check_points(self, interaction: discord.Interaction, message: discord.Message):
-        """Message Context Menu 查看積分回調"""
+    async def context_check_featured_stats(self, interaction: discord.Interaction, message: discord.Message):
+        """Message Context Menu 查看精選紀錄回調"""
         # 記錄命令使用
-        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了右鍵查看積分功能，目標用戶: {message.author.display_name}")
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 使用了右鍵查看精選紀錄功能，目標用戶: {message.author.display_name}")
         
         try:
             # 獲取目標用戶（留言作者）
@@ -1755,28 +1592,27 @@ class FeaturedCommands(commands.Cog):
             # 先準備好嵌入訊息，避免在發送回應後再調用異步方法
             embed = await view.get_records_embed()
             
-            # 添加積分統計到嵌入訊息
+            # 添加統計到嵌入訊息
             embed.add_field(
-                name="📈 積分統計",
-                value=f"**總積分**: {stats['points']} 積分\n"
-                      f"**被精选次数**: {stats['featured_count']} 次\n"
+                name="📈 精選統計",
+                value=f"**被精选次数**: {stats['featured_count']} 次\n"
                       f"**引荐人数**: {stats['featuring_count']} 人",
                 inline=False
             )
             
             embed.set_thumbnail(url=target_user.display_avatar.url)
             
-            # 所有積分查看都使用 ephemeral=True，避免聊天頻道被塞爆
+            # 所有查看統計都使用 ephemeral=True，避免聊天頻道被塞爆
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
-            logger.error(f"右鍵查看積分時發生錯誤: {e}")
+            logger.error(f"右鍵查看精選紀錄時發生錯誤: {e}")
             await interaction.response.send_message(
-                "❌ 查看積分時發生錯誤，請稍後重試。",
+                "❌ 查看精選紀錄時發生錯誤，請稍後重試。",
                 ephemeral=True
             )
     
-    @app_commands.command(name="精选", description="将指定用户的留言设为精选，该用户获得1积分（留言需至少10字符且不能只含表情）")
+    @app_commands.command(name="精选", description="将指定用户的留言设为精选（留言需至少10字符且不能只含表情）")
     @app_commands.describe(
         message_url="要精选的留言URL（右键留言 -> 复制链接）",
         reason="精选原因（可选）"
@@ -1898,17 +1734,6 @@ class FeaturedCommands(commands.Cog):
                 await interaction.response.send_message("❌ 精选失败，该用户可能已经被精选过了。", ephemeral=True)
                 return
             
-            # 给用户添加积分（總積分）
-            logger.info(f"🎯 给用户 {message.author.display_name} (ID: {message.author.id}) 添加 {config.POINTS_PER_FEATURE} 积分")
-            new_points = self.db.add_user_points(
-                user_id=message.author.id,
-                username=message.author.display_name,
-                points=config.POINTS_PER_FEATURE,
-                guild_id=interaction.guild_id
-            )
-            
-            logger.info(f"✅ 用户 {message.author.display_name} 积分更新完成 - 總積分: {new_points}")
-            
         except Exception as e:
             logger.error(f"精选留言时发生错误: {e}")
             # 檢查是否已經回應過或 interaction 是否有效
@@ -1998,22 +1823,20 @@ class FeaturedCommands(commands.Cog):
                 inline=True
             )
             
-            embed.add_field(
-                name="積分變更",
-                value=f"{featured_info['author_name']} 的積分已減少 1 分",
-                inline=False
-            )
+            embed.set_footer(text=f"留言ID: {message_id_int} | 60秒后自动取消")
             
-            if bot_message_deleted:
-                embed.add_field(
-                    name="🗑️ 消息清理",
-                    value="已自动删除精选通知消息",
-                    inline=False
-                )
+            # 使用获取到的消息对象，如果获取不到则只传ID
+            try:
+                message = await interaction.channel.fetch_message(message_id_int)
+                view = UnfeatureConfirmView(message, thread_id, self.bot, self.db)
+            except Exception:
+                # 創建一個帶有 ID 的假 Message 對象
+                class FakeMessage:
+                    def __init__(self, msg_id):
+                        self.id = msg_id
+                view = UnfeatureConfirmView(FakeMessage(message_id_int), thread_id, self.bot, self.db)
             
-            embed.set_footer(text=f"留言ID: {message_id}")
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             logger.error(f"取消精选留言时发生错误: {e}")
@@ -2025,13 +1848,13 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
                 
-    @app_commands.command(name="总排行", description="查看总积分排行榜和引荐人数排行榜（仅管理组可用，支持时间范围）")
+    @app_commands.command(name="總排行", description="查看引薦人數排行榜（僅管理組可用，支持時間範圍）")
     @app_commands.describe(
         start_date="起始日期（可选，格式：YYYY-MM-DD，例如：2024-01-01）",
         end_date="结束日期（可选，格式：YYYY-MM-DD，例如：2024-12-31）"
     )
     async def total_ranking(self, interaction: discord.Interaction, start_date: str = None, end_date: str = None):
-        """查看總排行榜命令（僅管理組可用）- 支持積分排行和引薦人數排行切換，支持時間範圍"""
+        """查看總排行榜命令（僅管理組可用）- 支持引薦人數排行，支持時間範圍"""
         # 记录命令使用
         logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了總排行榜，时间范围: {start_date} 至 {end_date}")
         
@@ -2070,8 +1893,8 @@ class FeaturedCommands(commands.Cog):
                     await interaction.response.send_message("❌ 結束日期格式錯誤！請使用 YYYY-MM-DD 格式，例如：2024-12-31", ephemeral=True)
                     return
             
-            # 創建增強排行榜視圖（預設為積分排行）
-            view = EnhancedRankingView(self.bot, interaction.guild_id, 1, "points", start_date, end_date)
+            # 創建增強排行榜視圖（預設為引薦排行）
+            view = EnhancedRankingView(self.bot, interaction.guild_id, 1, start_date, end_date)
             
             # 獲取嵌入訊息
             embed = await view.get_ranking_embed()
@@ -2088,12 +1911,12 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
     
-    @app_commands.command(name="积分", description="查看用户积分和精选记录（如果没有指定用户，默认查看自己）")
-    async def check_points(self, interaction: discord.Interaction, user: discord.Member = None):
-        """查看积分命令（支持查看其他用户）"""
+    @app_commands.command(name="精選紀錄", description="查看用戶精選紀錄與引荐統計（如果沒有指定用戶，默認查看自己）")
+    async def check_featured_stats(self, interaction: discord.Interaction, user: discord.Member = None):
+        """查看精選紀錄命令（支持查看其他用戶）"""
         # 记录命令使用
         target_user = user.name if user else interaction.user.name
-        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了用户 {target_user} 的积分")
+        logger.info(f"🔍 用户 {interaction.user.name} (ID: {interaction.user.id}) 在群组 {interaction.guild.name} (ID: {interaction.guild.id}) 查看了用户 {target_user} 的精選紀錄")
         
         try:
             # 如果沒有指定用戶，默認查看自己
@@ -2111,28 +1934,27 @@ class FeaturedCommands(commands.Cog):
             
 
             
-            # 添加積分統計到嵌入訊息
+            # 添加統計到嵌入訊息
             embed.add_field(
-                name="📈 積分統計",
-                value=f"**總積分**: {stats['points']} 積分\n"
-                      f"**被精选次数**: {stats['featured_count']} 次\n"
+                name="📈 精選統計",
+                value=f"**被精选次数**: {stats['featured_count']} 次\n"
                       f"**引荐人数**: {stats['featuring_count']} 人",
                 inline=False
             )
             
             embed.set_thumbnail(url=user.display_avatar.url)
             
-            # 所有積分查看都使用 ephemeral=True，避免聊天頻道被塞爆
+            # 所有查看統計都使用 ephemeral=True，避免聊天頻道被塞爆
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
-            logger.error(f"查看积分时发生错误: {e}")
+            logger.error(f"查看精選紀錄時發生錯誤: {e}")
             # 檢查是否已經回應過
             if not interaction.response.is_done():
-                await interaction.response.send_message("❌ 查看积分时发生错误，请稍后重试。", ephemeral=True)
+                await interaction.response.send_message("❌ 查看精選紀錄時發生錯誤，請稍後重試。", ephemeral=True)
             else:
                 # 如果已經回應過，使用 followup
-                await interaction.followup.send("❌ 查看积分时发生错误，请稍后重试。", ephemeral=True)
+                await interaction.followup.send("❌ 查看精選紀錄時發生錯誤，請稍後重試。", ephemeral=True)
     
     @app_commands.command(name="帖子统计", description="查看当前帖子的精选统计（仅自己可见）")
     async def thread_stats(self, interaction: discord.Interaction):
@@ -2202,8 +2024,8 @@ class FeaturedCommands(commands.Cog):
             embed.add_field(
                 name="📋 申请条件",
                 value=f"**满足以下条件之一即可**：\n"
-                      f"• 积分至少 {config.APPRECIATOR_MIN_POINTS} 分\n"
-                      f"• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人",
+                      f"• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次\n"
+                      f"• 引荐至少 {config.APPRECIATOR_MIN_REFERRALS} 人",
                 inline=False
             )
             embed.add_field(
@@ -2213,14 +2035,14 @@ class FeaturedCommands(commands.Cog):
             )
             embed.add_field(
                 name="💡 说明",
-                value="• 满足条件的用户可点击按钮自动获得身份\n• 已拥有该身份的用户无法重复申请\n• 机器人会自动检查您的积分和引荐人数\n• 如遇权限问题，请联系群组管理员",
+                value="• 滿足條件的用户可点击按钮自動獲得身份\n• 已擁有該身份的用户無法重複申請\n• 機器人會自動檢查您的精選紀錄和引薦人數\n• 如遇權限問題，請聯繫群組管理員",
                 inline=False
             )
             embed.add_field(
                 name="📖 快速使用指南",
                 value="**如何参与精选系统？**\n"
                       "• `/精选` - 楼主可精选优质留言（右键留言→复制链接）\n"
-                      "• `/积分` - 查看自己的积分和精选记录\n"
+                      "• `/精选紀錄` - 查看自己的精選紀錄與引荐統計\n"
                       "• `/帖子统计` - 在帖子中查看精选统计\n\n"
                       "**精选要求**：留言至少10字符，支持附件+文字",
                 inline=False

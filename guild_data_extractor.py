@@ -49,7 +49,7 @@ class GuildDataExtractor:
     
     def get_all_guilds(self) -> List[int]:
         """获取所有群组ID"""
-        self.cursor.execute("SELECT DISTINCT guild_id FROM user_points ORDER BY guild_id")
+        self.cursor.execute("SELECT DISTINCT guild_id FROM featured_messages ORDER BY guild_id")
         guilds = [row[0] for row in self.cursor.fetchall()]
         return guilds
     
@@ -57,8 +57,8 @@ class GuildDataExtractor:
         """获取群组基本信息"""
         # 用户统计
         self.cursor.execute("""
-            SELECT COUNT(*) as user_count, SUM(points) as total_points 
-            FROM user_points 
+            SELECT COUNT(DISTINCT author_id) as user_count 
+            FROM featured_messages 
             WHERE guild_id = ?
         """, (guild_id,))
         user_stats = self.cursor.fetchone()
@@ -74,30 +74,10 @@ class GuildDataExtractor:
         return {
             'guild_id': guild_id,
             'user_count': user_stats[0] if user_stats else 0,
-            'total_points': user_stats[1] if user_stats and user_stats[1] else 0,
             'featured_count': featured_count
         }
     
-    def extract_user_points(self, guild_id: int) -> List[Dict[str, Any]]:
-        """提取群组用户积分数据"""
-        self.cursor.execute("""
-            SELECT user_id, username, points, created_at, updated_at
-            FROM user_points 
-            WHERE guild_id = ?
-            ORDER BY points DESC
-        """, (guild_id,))
-        
-        results = self.cursor.fetchall()
-        return [
-            {
-                'user_id': row[0],
-                'username': row[1],
-                'points': row[2],
-                'created_at': row[3],
-                'updated_at': row[4]
-            }
-            for row in results
-        ]
+
     
     def extract_featured_messages(self, guild_id: int) -> List[Dict[str, Any]]:
         """提取群组精選记录数据"""
@@ -131,16 +111,13 @@ class GuildDataExtractor:
         print(f"🔍 正在提取群组 {guild_id} 的数据...")
         
         guild_info = self.get_guild_info(guild_id)
-        user_points = self.extract_user_points(guild_id)
         featured_messages = self.extract_featured_messages(guild_id)
         
         return {
             'guild_info': guild_info,
-            'user_points': user_points,
             'featured_messages': featured_messages,
             'extract_time': datetime.now().isoformat(),
             'total_records': {
-                'user_points': len(user_points),
                 'featured_messages': len(featured_messages)
             }
         }
@@ -157,14 +134,7 @@ class GuildDataExtractor:
     def save_to_csv(self, data: Dict[str, Any], base_filename: str):
         """保存数据到CSV文件"""
         try:
-            # 保存用户积分
-            if data['user_points']:
-                user_points_file = f"{base_filename}_user_points.csv"
-                with open(user_points_file, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.DictWriter(f, fieldnames=data['user_points'][0].keys())
-                    writer.writeheader()
-                    writer.writerows(data['user_points'])
-                print(f"✅ 用户积分已保存到: {user_points_file}")
+
             
             # 保存精選记录
             if data['featured_messages']:
@@ -187,18 +157,7 @@ class GuildDataExtractor:
             
             print(f"🔧 正在创建新数据库: {db_filename}")
             
-            # 创建表结构
-            new_cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_points (
-                    user_id INTEGER NOT NULL,
-                    guild_id INTEGER NOT NULL,
-                    username TEXT NOT NULL,
-                    points INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, guild_id)
-                )
-            ''')
+
             
             new_cursor.execute('''
                 CREATE TABLE IF NOT EXISTS featured_messages (
@@ -218,24 +177,9 @@ class GuildDataExtractor:
             ''')
             
             # 创建索引
-            new_cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_points_guild ON user_points(guild_id)')
             new_cursor.execute('CREATE INDEX IF NOT EXISTS idx_featured_messages_guild ON featured_messages(guild_id)')
             
-            # 插入用户积分数据
-            if data['user_points']:
-                for user_point in data['user_points']:
-                    new_cursor.execute('''
-                        INSERT INTO user_points (user_id, guild_id, username, points, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (
-                        user_point['user_id'],
-                        data['guild_info']['guild_id'],
-                        user_point['username'],
-                        user_point['points'],
-                        user_point['created_at'],
-                        user_point['updated_at']
-                    ))
-                print(f"✅ 已插入 {len(data['user_points'])} 条用户积分记录")
+
             
             # 插入精選记录数据
             if data['featured_messages']:
@@ -280,11 +224,9 @@ class GuildDataExtractor:
         print(f"📊 群组 {guild_info['guild_id']} 数据摘要")
         print("="*50)
         print(f"👥 用户数量: {guild_info['user_count']}")
-        print(f"🏆 总积分: {guild_info['total_points']}")
         print(f"🌟 精選记录: {guild_info['featured_count']}")
         print("-"*50)
         print(f"📋 提取记录数:")
-        print(f"   - 用户积分: {total_records['user_points']}")
         print(f"   - 精選记录: {total_records['featured_messages']}")
         print(f"⏰ 提取时间: {data['extract_time']}")
         print("="*50)
@@ -328,7 +270,7 @@ def main():
             print(f"📋 数据库中共有 {len(guilds)} 个群组:")
             for guild_id in guilds:
                 guild_info = extractor.get_guild_info(guild_id)
-                print(f"  🏠 群组 {guild_id}: {guild_info['user_count']} 用户, {guild_info['total_points']} 积分, {guild_info['featured_count']} 精選")
+                print(f"  🏠 群组 {guild_id}: {guild_info['user_count']} 用户, {guild_info['featured_count']} 精選")
         
         elif command == 'all':
             # 提取所有群组数据

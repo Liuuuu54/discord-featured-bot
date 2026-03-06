@@ -83,53 +83,6 @@ def check_database(simple_mode=False):
                 
                 print()
         
-        # 群組統計
-        print_separator("🌐 群組統計")
-        try:
-            cursor.execute("""
-                SELECT guild_id, COUNT(*) as user_count, SUM(points) as total_points
-                FROM user_points 
-                GROUP BY guild_id
-                ORDER BY total_points DESC
-            """)
-            guild_stats = cursor.fetchall()
-            
-            if guild_stats:
-                print("📊 各群組統計:")
-                for guild_id, user_count, total_points in guild_stats:
-                    print(f"  🏠 群組 {guild_id}: {user_count} 用戶, {total_points or 0} 總積分")
-            else:
-                print("📝 還沒有群組數據")
-                
-        except sqlite3.OperationalError:
-            print("❌ 無法檢查群組統計")
-        
-        # 總積分排行榜
-        print_separator("📈 總積分排行榜")
-        try:
-            cursor.execute("""
-                SELECT guild_id, user_id, username, points
-                FROM user_points 
-                ORDER BY guild_id, points DESC 
-                LIMIT 20
-            """)
-            total_ranking = cursor.fetchall()
-            
-            if total_ranking:
-                current_guild = None
-                for guild_id, user_id, username, points in total_ranking:
-                    if guild_id != current_guild:
-                        current_guild = guild_id
-                        print(f"\n🏠 群組 {guild_id}:")
-                    
-                    print(f"  - {username} (ID: {user_id}) - {points} 分")
-            else:
-                print("📝 還沒有總積分記錄")
-                    
-        except sqlite3.OperationalError:
-            print("❌ 用戶積分表格不存在")
-        
-
         
         # 精選記錄統計
         print_separator("🌟 精選記錄統計")
@@ -170,8 +123,8 @@ def interactive_mode():
         
         print("✅ 數據庫支持多群組")
         print("💡 多群組查詢範例:")
-        print("  SELECT * FROM user_points WHERE guild_id = 123456789;")
-        print("  SELECT guild_id, COUNT(*) FROM user_points GROUP BY guild_id;")
+        print("  SELECT * FROM featured_messages WHERE guild_id = 123456789;")
+        print("  SELECT guild_id, COUNT(*) FROM featured_messages GROUP BY guild_id;")
         
         while True:
             try:
@@ -181,13 +134,11 @@ def interactive_mode():
                     break
                 elif query.lower() == 'help':
                     print("\n📖 常用查詢範例:")
-                    print("  SELECT * FROM user_points LIMIT 5;")
-                    print("  SELECT * FROM featured_messages LIMIT 5;")
-                    print("  SELECT COUNT(*) FROM user_points;")
+                    print("  SELECT COUNT(*) FROM featured_messages;")
+                    print("  SELECT author_id, COUNT(DISTINCT thread_id) FROM featured_messages GROUP BY author_id;")
                     print("\n🌐 多群組查詢:")
-                    print("  SELECT * FROM user_points WHERE guild_id = 123456789;")
-                    print("  SELECT guild_id, COUNT(*) FROM user_points GROUP BY guild_id;")
-                    print("  SELECT guild_id, SUM(points) FROM user_points GROUP BY guild_id;")
+                    print("  SELECT * FROM featured_messages WHERE guild_id = 123456789;")
+                    print("  SELECT guild_id, COUNT(*) FROM featured_messages GROUP BY guild_id;")
                     continue
                 elif not query:
                     continue
@@ -222,7 +173,7 @@ def check_guild_data(guild_id=None):
         
         if guild_id is None:
             # 顯示所有群組
-            cursor.execute("SELECT DISTINCT guild_id FROM user_points ORDER BY guild_id")
+            cursor.execute("SELECT DISTINCT guild_id FROM featured_messages ORDER BY guild_id")
             guilds = cursor.fetchall()
             
             if guilds:
@@ -235,20 +186,6 @@ def check_guild_data(guild_id=None):
         
         # 檢查特定群組
         print(f"🔍 檢查群組 {guild_id} 的數據:")
-        
-        # 用戶積分
-        cursor.execute("""
-            SELECT user_id, username, points 
-            FROM user_points 
-            WHERE guild_id = ? 
-            ORDER BY points DESC
-        """, (guild_id,))
-        user_points = cursor.fetchall()
-        
-        print(f"\n📊 用戶積分 ({len(user_points)} 用戶):")
-        for user_id, username, points in user_points[:10]:
-            print(f"  - {username} (ID: {user_id}): {points} 分")
-        
 
         
         # 精選記錄

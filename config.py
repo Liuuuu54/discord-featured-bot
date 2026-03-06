@@ -28,9 +28,6 @@ DATABASE_FILE = os.path.join(DATA_DIR, 'featured_messages.db')
 # 日志文件路径
 LOG_FILE = os.path.join(LOGS_DIR, 'bot.log')
 
-# ==================== 积分系统配置 ====================
-POINTS_PER_FEATURE = 1  # 每次精選获得的积分
-
 # ==================== 管理组配置 ====================
 # 管理组角色名称列表
 ADMIN_ROLE_NAMES = [
@@ -44,7 +41,7 @@ ADMIN_ROLE_NAMES = [
 
 # ==================== 鉴赏申请窗口配置 ====================
 APPRECIATOR_ROLE_NAME = '鉴赏家'  # 鉴赏家角色名称
-APPRECIATOR_MIN_POINTS = 1  # 最低积分要求
+APPRECIATOR_MIN_FEATURED = 1  # 最低被引荐人数要求
 APPRECIATOR_MIN_REFERRALS = 3  # 最低引荐人数要求
 
 # ==================== 界面配置 ====================

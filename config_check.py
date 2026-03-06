@@ -95,7 +95,7 @@ def show_config_summary():
         
         config_items = [
             ("Discord Token", "已设置" if config.DISCORD_TOKEN else "未设置"),
-            ("积分设置", f"{config.POINTS_PER_FEATURE} 分/次"),
+            ("管理組角色長度", str(len(config.ADMIN_ROLE_NAMES))),
             ("界面超时", f"{config.VIEW_TIMEOUT} 秒"),
             ("用户记录每页", f"{config.USER_RECORDS_PER_PAGE} 条"),
             ("排行榜每页", f"{config.RANKING_PER_PAGE} 条"),
@@ -107,7 +107,7 @@ def show_config_summary():
             ("最小消息长度", f"{config.MIN_MESSAGE_LENGTH} 字符"),
             ("最大消息长度", f"{config.MAX_MESSAGE_LENGTH} 字符" if config.MAX_MESSAGE_LENGTH > 0 else "无限制"),
             ("鉴赏家角色", config.APPRECIATOR_ROLE_NAME),
-            ("鉴赏家最低积分", f"{config.APPRECIATOR_MIN_POINTS} 分"),
+            ("鉴赏家最低被引荐", f"{config.APPRECIATOR_MIN_FEATURED} 次"),
             ("鉴赏家最低引荐", f"{config.APPRECIATOR_MIN_REFERRALS} 人"),
         ]
         

@@ -4,7 +4,7 @@
 
 本机器人的配置分为两个部分：
 - **敏感信息**：存储在 `.env` 文件中（如 Discord Token）
-- **功能配置**：存储在 `config.py` 文件中（如积分、界面设置等）
+- **功能配置**：存储在 `config.py` 文件中（如界面设置等）
 
 ## 快速开始
 
@@ -45,11 +45,7 @@ DISCORD_TOKEN=your_discord_bot_token_here
 # 本机器人使用斜杠命令，不需要命令前缀
 ```
 
-#### 积分系统配置
-
-```python
-POINTS_PER_FEATURE = 1              # 每次精选获得的积分
-```
+#### 其他功能配置
 
 #### 界面配置
 
@@ -112,7 +108,7 @@ ADMIN_ROLE_NAMES = [               # 管理组角色名称列表
 
 ```python
 APPRECIATOR_ROLE_NAME = '鉴赏家'    # 鉴赏家角色名称
-APPRECIATOR_MIN_POINTS = 1         # 最低积分要求
+APPRECIATOR_MIN_FEATURED = 1       # 最低被引荐人数要求
 APPRECIATOR_MIN_REFERRALS = 3      # 最低引荐人数要求
 ```
 
@@ -144,7 +140,7 @@ APPRECIATOR_MIN_REFERRALS = 3      # 最低引荐人数要求
 ### 用户体验
 
 - 调整每页显示记录数可以优化界面显示
-- 设置合理的积分和引荐人数要求
+- 设置合理的被引荐次数和引荐人数要求
 - 配置合适的管理组角色名称
 
 ### 安全性
@@ -155,14 +151,14 @@ APPRECIATOR_MIN_REFERRALS = 3      # 最低引荐人数要求
 
 ## 常见问题
 
-### Q: 如何修改积分系统？
-A: 编辑 `config.py` 中的 `POINTS_PER_FEATURE` 配置项。
+### Q: 鑒賞家申請條件是如何運作的？
+A: 鑒賞家身份組的申請條件現在改為「被引荐次數」與「引荐人數」。用戶只要滿足其中一個條件（例如被引荐 1 次或引荐 3 人），即可通過 `/鑒賞申請窗口` 命令申請身份。您可以透過修改 `config.py` 中的 `APPRECIATOR_MIN_FEATURED` 與 `APPRECIATOR_MIN_REFERRALS` 進行調整。
 
 ### Q: 如何添加新的管理组角色？
 A: 直接编辑 `config.py` 文件中的 `ADMIN_ROLE_NAMES` 列表。
 
 ### Q: 如何修改鉴赏家申请条件？
-A: 直接编辑 `config.py` 文件中的 `APPRECIATOR_MIN_POINTS` 和 `APPRECIATOR_MIN_REFERRALS` 配置项。
+A: 直接编辑 `config.py` 文件中的 `APPRECIATOR_MIN_FEATURED` 和 `APPRECIATOR_MIN_REFERRALS` 配置项。
 
 ### Q: 如何调整界面显示？
 A: 修改 `config.py` 中的界面配置项，如 `USER_RECORDS_PER_PAGE`、`VIEW_TIMEOUT` 等。

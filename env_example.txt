@@ -7,6 +7,14 @@
 # 从 Discord Developer Portal 获取
 DISCORD_TOKEN=your_discord_bot_token_here
 
+# Database Configuration (Optional)
+# DB_FILE=bot_data.db
+
+# Optional links (used in commands)
+HOME_URL=https://example.com/
+TERMS_URL=https://example.com/terms
+PRIVACY_URL=https://example.com/privacy
+
 # ==================== 可选配置 ====================
 # 以下配置项如果不设置，将使用 config.py 中的默认值
 # 如需自定义，请取消注释并修改
@@ -17,5 +25,5 @@ DISCORD_TOKEN=your_discord_bot_token_here
 # 鉴赏家申请配置（在 config.py 中直接设置）
 # 如需修改，请编辑 config.py 文件中的以下配置项：
 # - APPRECIATOR_ROLE_NAME = '鉴赏家'
-# - APPRECIATOR_MIN_POINTS = 5
-# - APPRECIATOR_MIN_REFERRALS = 5
+# - APPRECIATOR_MIN_FEATURED = 1
+# - APPRECIATOR_MIN_REFERRALS = 3
