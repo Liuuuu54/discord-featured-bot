@@ -33,6 +33,55 @@ class DatabaseManager:
         
         # 添加索引以提高查询性能
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_featured_messages_guild ON featured_messages(guild_id)')
+
+        # 用户书单主表（每个用户固定 10 张，list_id: 0~9）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_booklists (
+                user_id INTEGER NOT NULL,
+                list_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, list_id)
+            )
+        ''')
+
+        # 书单帖子明细（每张书单最多 20 条由业务层控制）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_booklist_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                list_id INTEGER NOT NULL,
+                thread_guild_id INTEGER NOT NULL,
+                thread_id INTEGER NOT NULL,
+                thread_title TEXT NOT NULL,
+                thread_url TEXT NOT NULL,
+                review TEXT,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id, list_id) REFERENCES user_booklists(user_id, list_id),
+                UNIQUE(user_id, list_id, thread_id)
+            )
+        ''')
+
+        # 公开书单消息记录
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS public_booklists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                list_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL UNIQUE,
+                intro TEXT NOT NULL,
+                published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                removed_at TIMESTAMP,
+                is_active INTEGER DEFAULT 1
+            )
+        ''')
+
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_booklists_user ON user_booklists(user_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_booklist_entries_user_list ON user_booklist_entries(user_id, list_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_public_booklists_user_active ON public_booklists(user_id, is_active)')
         
         conn.commit()
         conn.close()
@@ -428,4 +477,266 @@ class DatabaseManager:
             for row in results
         ]
         
-        return messages, total_pages 
+        return messages, total_pages
+
+    # ==================== 书单 2.0 ====================
+    def ensure_user_booklists(self, user_id: int):
+        """确保用户拥有 0~9 共 10 张书单。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+
+        for list_id in range(10):
+            cursor.execute('''
+                INSERT OR IGNORE INTO user_booklists (user_id, list_id, title)
+                VALUES (?, ?, ?)
+            ''', (user_id, list_id, f"我的书单 {list_id}"))
+
+        conn.commit()
+        conn.close()
+
+    def get_user_booklists_overview(self, user_id: int) -> List[Dict]:
+        """获取用户 10 张书单概览（标题 + 帖子数）。"""
+        self.ensure_user_booklists(user_id)
+
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                b.list_id,
+                b.title,
+                COUNT(e.id) AS post_count
+            FROM user_booklists b
+            LEFT JOIN user_booklist_entries e
+                ON b.user_id = e.user_id AND b.list_id = e.list_id
+            WHERE b.user_id = ?
+            GROUP BY b.user_id, b.list_id, b.title
+            ORDER BY b.list_id ASC
+        ''', (user_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            {'list_id': row[0], 'title': row[1], 'post_count': row[2]}
+            for row in rows
+        ]
+
+    def get_user_booklist(self, user_id: int, list_id: int) -> Dict:
+        """获取单张书单详情。"""
+        self.ensure_user_booklists(user_id)
+
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT title FROM user_booklists
+            WHERE user_id = ? AND list_id = ?
+        ''', (user_id, list_id))
+        title_row = cursor.fetchone()
+
+        cursor.execute('''
+            SELECT id, thread_guild_id, thread_id, thread_title, thread_url, review, added_at
+            FROM user_booklist_entries
+            WHERE user_id = ? AND list_id = ?
+            ORDER BY added_at DESC, id DESC
+        ''', (user_id, list_id))
+        entry_rows = cursor.fetchall()
+        conn.close()
+
+        entries = [
+            {
+                'id': row[0],
+                'thread_guild_id': row[1],
+                'thread_id': row[2],
+                'thread_title': row[3],
+                'thread_url': row[4],
+                'review': row[5] or "",
+                'added_at': row[6]
+            }
+            for row in entry_rows
+        ]
+
+        return {
+            'list_id': list_id,
+            'title': title_row[0] if title_row else f"我的书单 {list_id}",
+            'post_count': len(entries),
+            'entries': entries
+        }
+
+    def rename_user_booklist(self, user_id: int, list_id: int, new_title: str):
+        """重命名书单标题。"""
+        self.ensure_user_booklists(user_id)
+
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE user_booklists
+            SET title = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND list_id = ?
+        ''', (new_title, user_id, list_id))
+        conn.commit()
+        conn.close()
+
+    def add_post_to_booklist(self, user_id: int, list_id: int, thread_guild_id: int, thread_id: int,
+                             thread_title: str, thread_url: str, review: str = "") -> Tuple[bool, str]:
+        """添加帖子到书单（同书单不重复，最多 20 条）。"""
+        if list_id < 0 or list_id > 9:
+            return False, "书单 ID 必须在 0~9。"
+
+        self.ensure_user_booklists(user_id)
+
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT COUNT(*)
+            FROM user_booklist_entries
+            WHERE user_id = ? AND list_id = ?
+        ''', (user_id, list_id))
+        current_count = cursor.fetchone()[0]
+        if current_count >= 20:
+            conn.close()
+            return False, "该书单已满（20/20），无法继续添加。"
+
+        cursor.execute('''
+            SELECT 1
+            FROM user_booklist_entries
+            WHERE user_id = ? AND list_id = ? AND thread_id = ?
+        ''', (user_id, list_id, thread_id))
+        if cursor.fetchone():
+            conn.close()
+            return False, "同一书单内不能重复添加同一帖子。"
+
+        try:
+            cursor.execute('''
+                INSERT INTO user_booklist_entries
+                (user_id, list_id, thread_guild_id, thread_id, thread_title, thread_url, review)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (user_id, list_id, thread_guild_id, thread_id, thread_title, thread_url, review))
+            conn.commit()
+            conn.close()
+            return True, "已成功添加到书单。"
+        except sqlite3.IntegrityError:
+            conn.close()
+            return False, "同一书单内不能重复添加同一帖子。"
+
+    def _get_entry_by_index(self, cursor, user_id: int, list_id: int, entry_index: int):
+        if entry_index < 1:
+            return None
+
+        cursor.execute('''
+            SELECT id, thread_id, thread_title, thread_url, review
+            FROM user_booklist_entries
+            WHERE user_id = ? AND list_id = ?
+            ORDER BY added_at DESC, id DESC
+            LIMIT 1 OFFSET ?
+        ''', (user_id, list_id, entry_index - 1))
+        return cursor.fetchone()
+
+    def remove_booklist_entry_by_index(self, user_id: int, list_id: int, entry_index: int) -> Tuple[bool, str]:
+        """按当前书单展示顺序删除第 N 条。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+
+        entry = self._get_entry_by_index(cursor, user_id, list_id, entry_index)
+        if not entry:
+            conn.close()
+            return False, "找不到对应序号的帖子。"
+
+        cursor.execute('DELETE FROM user_booklist_entries WHERE id = ?', (entry[0],))
+        conn.commit()
+        conn.close()
+        return True, f"已删除帖子：{entry[2]}"
+
+    def move_booklist_entry_by_index(self, user_id: int, from_list_id: int, entry_index: int, to_list_id: int) -> Tuple[bool, str]:
+        """将 from_list 的第 N 条移动到 to_list。"""
+        if to_list_id < 0 or to_list_id > 9:
+            return False, "目标书单 ID 必须在 0~9。"
+        if from_list_id == to_list_id:
+            return False, "来源书单与目标书单不能相同。"
+
+        self.ensure_user_booklists(user_id)
+
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+
+        entry = self._get_entry_by_index(cursor, user_id, from_list_id, entry_index)
+        if not entry:
+            conn.close()
+            return False, "找不到对应序号的帖子。"
+
+        thread_id = entry[1]
+        thread_title = entry[2]
+
+        cursor.execute('''
+            SELECT COUNT(*)
+            FROM user_booklist_entries
+            WHERE user_id = ? AND list_id = ?
+        ''', (user_id, to_list_id))
+        to_count = cursor.fetchone()[0]
+        if to_count >= 20:
+            conn.close()
+            return False, "目标书单已满（20/20），无法搬移。"
+
+        cursor.execute('''
+            SELECT 1
+            FROM user_booklist_entries
+            WHERE user_id = ? AND list_id = ? AND thread_id = ?
+        ''', (user_id, to_list_id, thread_id))
+        if cursor.fetchone():
+            conn.close()
+            return False, "目标书单已存在同一帖子，无法重复搬移。"
+
+        cursor.execute('''
+            UPDATE user_booklist_entries
+            SET list_id = ?
+            WHERE id = ?
+        ''', (to_list_id, entry[0]))
+        conn.commit()
+        conn.close()
+        return True, f"已将《{thread_title}》搬移到书单 {to_list_id}。"
+
+    def update_booklist_entry_review_by_index(self, user_id: int, list_id: int, entry_index: int, new_review: str) -> Tuple[bool, str]:
+        """按序号更新帖子评价。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+
+        entry = self._get_entry_by_index(cursor, user_id, list_id, entry_index)
+        if not entry:
+            conn.close()
+            return False, "找不到对应序号的帖子。"
+
+        cursor.execute('''
+            UPDATE user_booklist_entries
+            SET review = ?
+            WHERE id = ?
+        ''', (new_review, entry[0]))
+        conn.commit()
+        conn.close()
+        return True, "帖子评价已更新。"
+
+    def create_public_booklist_record(self, user_id: int, list_id: int, guild_id: int,
+                                      channel_id: int, message_id: int, intro: str):
+        """记录公开书单消息，便于追踪/下架。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO public_booklists
+            (user_id, list_id, guild_id, channel_id, message_id, intro)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (user_id, list_id, guild_id, channel_id, message_id, intro))
+        conn.commit()
+        conn.close()
+
+    def deactivate_public_booklist(self, user_id: int, message_id: int) -> bool:
+        """下架公开书单（仅发布者）。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE public_booklists
+            SET is_active = 0, removed_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND message_id = ? AND is_active = 1
+        ''', (user_id, message_id))
+        changed = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return changed

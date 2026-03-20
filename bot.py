@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import config
 from database import DatabaseManager
+from booklist_system import BooklistCommands
 import logging
 import asyncio
 from datetime import datetime
@@ -259,6 +260,7 @@ class FeaturedMessageBot(commands.Bot):
     async def setup_hook(self):
         """机器人启动时的设置"""
         await self.add_cog(FeaturedCommands(self))
+        await self.add_cog(BooklistCommands(self))
         await self.tree.sync()
         logger.info('🤖 机器人设置完成，正在连接...')
     
