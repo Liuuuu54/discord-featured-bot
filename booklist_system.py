@@ -1,4 +1,5 @@
 ﻿import logging
+import re
 from typing import Optional
 
 import discord
@@ -9,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 MAX_BOOKLISTS = 10
 MAX_POSTS_PER_LIST = 20
+PUBLIC_BOOKLIST_PAGE_SIZE = 5
 
 
 def _is_thread_channel(channel: discord.abc.GuildChannel) -> bool:
@@ -26,6 +28,11 @@ def _truncate(text: str, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 1] + "…"
+
+
+def _is_valid_discord_url(url: str) -> bool:
+    pattern = r"^https://discord\.com/channels/\d+/\d+(?:/\d+)?$"
+    return re.match(pattern, url.strip()) is not None
 
 
 class AddToBooklistModal(discord.ui.Modal, title="添加至书单"):
@@ -219,11 +226,37 @@ class EditReviewModal(discord.ui.Modal, title="修改帖子评价"):
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
+class LinkBooklistThreadModal(discord.ui.Modal, title="连结书单帖"):
+    def __init__(self, view):
+        super().__init__()
+        self.view = view
+        self.url_input = discord.ui.TextInput(
+            label="书单帖 URL（留空可清除）",
+            placeholder="https://discord.com/channels/服务器ID/频道或帖子ID",
+            required=False,
+            max_length=300,
+            style=discord.TextStyle.short,
+        )
+        self.add_item(self.url_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        url = (self.url_input.value or "").strip()
+        if url and not _is_valid_discord_url(url):
+            await interaction.response.send_message("❌ URL 格式错误，请填写 Discord 链接。", ephemeral=True)
+            return
+
+        self.view.cog.db.set_user_booklist_thread_url(self.view.user_id, self.view.guild_id, url)
+        notice = "✅ 已更新书单帖连结。" if url else "✅ 已清除书单帖连结。"
+        embed = self.view.build_embed(extra_notice=notice)
+        await interaction.response.edit_message(embed=embed, view=self.view)
+
+
 class ManageBooklistView(discord.ui.View):
-    def __init__(self, cog, user_id: int, current_list_id: int = 0):
+    def __init__(self, cog, user_id: int, guild_id: int, current_list_id: int = 0):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
+        self.guild_id = guild_id
         self.current_list_id = current_list_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -256,6 +289,10 @@ class ManageBooklistView(discord.ui.View):
             embed.add_field(name="帖子列表", value="\n".join(lines), inline=False)
         else:
             embed.add_field(name="帖子列表", value="暂无帖子。", inline=False)
+
+        profile_url = self.cog.db.get_user_booklist_thread_url(self.user_id, self.guild_id)
+        profile_text = f"[点击跳转]({profile_url})" if profile_url else "该用户暂无书单帖"
+        embed.add_field(name="书单帖连结", value=profile_text, inline=False)
 
         overview_text = " | ".join([f"{x['list_id']}:{x['post_count']}" for x in overview])
         embed.set_footer(text=f"10 张书单概览（ID:数量） {overview_text}")
@@ -290,6 +327,77 @@ class ManageBooklistView(discord.ui.View):
     @discord.ui.button(label="刷新", style=discord.ButtonStyle.secondary, emoji="🔄")
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label="连结书单帖", style=discord.ButtonStyle.primary, emoji="🔗", row=1)
+    async def link_booklist_thread(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(LinkBooklistThreadModal(self))
+
+
+class PublicBooklistPagerView(discord.ui.View):
+    def __init__(self, cog, publisher_user_id: int, list_id: int, intro: str, current_page: int = 1):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.publisher_user_id = publisher_user_id
+        self.list_id = list_id
+        self.intro = intro
+        self.current_page = current_page
+
+    def _build_embed_and_pages(self) -> tuple[discord.Embed, int]:
+        data = self.cog.db.get_user_booklist(self.publisher_user_id, self.list_id)
+        entries = data['entries']
+        total_entries = len(entries)
+        total_pages = max(1, (total_entries + PUBLIC_BOOKLIST_PAGE_SIZE - 1) // PUBLIC_BOOKLIST_PAGE_SIZE)
+        self.current_page = max(1, min(self.current_page, total_pages))
+
+        start = (self.current_page - 1) * PUBLIC_BOOKLIST_PAGE_SIZE
+        end = start + PUBLIC_BOOKLIST_PAGE_SIZE
+        page_entries = entries[start:end]
+
+        embed = discord.Embed(
+            title=f"📖 公开书单：{data['title']}（ID {self.list_id}）",
+            description=f"发布者：<@{self.publisher_user_id}>\n\n{self.intro}",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow(),
+        )
+
+        if page_entries:
+            lines = []
+            for idx, entry in enumerate(page_entries, start + 1):
+                title = _truncate(entry['thread_title'], 60)
+                review = entry['review'].strip() if entry['review'] else ""
+                review_text = f" | 评价：{_truncate(review, 50)}" if review else ""
+                lines.append(f"`{idx:02}` [{title}]({entry['thread_url']}){review_text}")
+            embed.add_field(
+                name=f"帖子列表（第 {self.current_page}/{total_pages} 页，共 {total_entries} 帖）",
+                value="\n".join(lines),
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name="帖子列表",
+                value="该书单当前没有帖子（可能已被清空）。",
+                inline=False,
+            )
+
+        return embed, total_pages
+
+    def _update_buttons(self, total_pages: int):
+        self.prev_page.disabled = self.current_page <= 1
+        self.next_page.disabled = self.current_page >= total_pages
+
+    @discord.ui.button(label="上一页", style=discord.ButtonStyle.secondary, emoji="◀️", custom_id="booklist_public:prev:v1")
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page -= 1
+        embed, total_pages = self._build_embed_and_pages()
+        self._update_buttons(total_pages)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="下一页", style=discord.ButtonStyle.secondary, emoji="▶️", custom_id="booklist_public:next:v1")
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page += 1
+        embed, total_pages = self._build_embed_and_pages()
+        self._update_buttons(total_pages)
+        await interaction.response.edit_message(embed=embed, view=self)
 
 
 class PublicBooklistModal(discord.ui.Modal, title="公开书单"):
@@ -331,71 +439,71 @@ class PublicBooklistModal(discord.ui.Modal, title="公开书单"):
             await interaction.response.send_message("❌ 该书单至少要有 5 帖才能公开。", ephemeral=True)
             return
 
-        lines = []
-        for idx, entry in enumerate(data['entries'], 1):
-            title = _truncate(entry['thread_title'], 60)
-            review = entry['review'].strip() if entry['review'] else ""
-            review_text = f" | 评价：{_truncate(review, 50)}" if review else ""
-            lines.append(f"`{idx:02}` [{title}]({entry['thread_url']}){review_text}")
-
-        embed = discord.Embed(
-            title=f"📖 公开书单：{data['title']}（ID {list_id}）",
-            description=f"发布者：{interaction.user.mention}\n\n{intro}",
-            color=discord.Color.gold(),
-            timestamp=discord.utils.utcnow(),
+        view = PublicBooklistPagerView(
+            self.cog,
+            publisher_user_id=interaction.user.id,
+            list_id=list_id,
+            intro=intro,
+            current_page=1
         )
-        embed.add_field(
-            name=f"帖子列表（{data['post_count']} / {MAX_POSTS_PER_LIST}）",
-            value="\n".join(lines),
-            inline=False,
-        )
-        embed.set_footer(text="可使用下方按钮移除公开书单")
-
-        view = PublicBooklistMessageView(self.cog, owner_id=interaction.user.id)
+        embed, total_pages = view._build_embed_and_pages()
+        view._update_buttons(total_pages)
 
         await interaction.response.defer(ephemeral=True, thinking=True)
         message = await interaction.channel.send(embed=embed, view=view)
-        self.cog.db.create_public_booklist_record(
-            user_id=interaction.user.id,
+        self.cog.db.add_public_booklist_index(
+            message_id=message.id,
+            publisher_user_id=interaction.user.id,
             list_id=list_id,
             guild_id=interaction.guild_id,
-            channel_id=interaction.channel_id,
-            message_id=message.id,
-            intro=intro,
+            channel_id=interaction.channel_id
         )
 
         await interaction.followup.send(
-            f"✅ 书单已公开：{message.jump_url}\n你可以用公开消息下方按钮自行移除。",
+            f"✅ 书单已公开：{message.jump_url}\n支持全员翻页；重启后仍可继续翻页。",
             ephemeral=True,
         )
 
 
-class PublicBooklistMessageView(discord.ui.View):
-    def __init__(self, cog, owner_id: int):
-        super().__init__(timeout=604800)
-        self.cog = cog
-        self.owner_id = owner_id
-
-    @discord.ui.button(label="移除公开书单", style=discord.ButtonStyle.danger, emoji="🧹")
-    async def remove_public_post(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("❌ 只有发布者可以移除这条公开书单。", ephemeral=True)
-            return
-
-        self.cog.db.deactivate_public_booklist(interaction.user.id, interaction.message.id)
-        try:
-            await interaction.message.delete()
-        except discord.Forbidden:
-            await interaction.response.send_message("❌ 我没有删除该消息的权限，请联系管理员。", ephemeral=True)
-            return
-
-
 class BooklistCommands(commands.Cog):
-    """书单 2.0 独立模块"""
+    """书单独立模块"""
 
     def __init__(self, bot):
         self.bot = bot
         self.db = bot.db
+
+    async def cog_load(self):
+        """重启后恢复公开书单分页按钮；不存在的消息自动失效。"""
+        indexes = self.db.get_active_public_booklist_indexes()
+        for item in indexes:
+            message_id = item['message_id']
+            channel_id = item['channel_id']
+            publisher_user_id = item['publisher_user_id']
+            list_id = item['list_id']
+
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(channel_id)
+                except Exception:
+                    self.db.deactivate_public_booklist_index(message_id)
+                    continue
+
+            try:
+                await channel.fetch_message(message_id)
+            except Exception:
+                self.db.deactivate_public_booklist_index(message_id)
+                continue
+
+            # intro 不存快照，重启恢复时用简短占位文本
+            view = PublicBooklistPagerView(
+                self,
+                publisher_user_id=publisher_user_id,
+                list_id=list_id,
+                intro="（书单介绍未保存快照，内容以当前书单为准）",
+                current_page=1
+            )
+            self.bot.add_view(view, message_id=message_id)
 
     @app_commands.command(name="添加至书单", description="将当前帖子添加到你的书单（仅自己可见）")
     async def add_to_booklist(self, interaction: discord.Interaction):
@@ -409,11 +517,24 @@ class BooklistCommands(commands.Cog):
     @app_commands.command(name="管理书单", description="管理你的 10 张书单（仅自己可见）")
     async def manage_booklist(self, interaction: discord.Interaction):
         self.db.ensure_user_booklists(interaction.user.id)
-        view = ManageBooklistView(self, interaction.user.id, current_list_id=0)
+        view = ManageBooklistView(self, interaction.user.id, interaction.guild_id, current_list_id=0)
         embed = view.build_embed()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @app_commands.command(name="公开书单", description="公开你的书单到当前频道")
     async def publish_booklist(self, interaction: discord.Interaction):
+        if not _is_thread_channel(interaction.channel):
+            await interaction.response.send_message("❌ /公开书单 只能在论坛帖中使用。", ephemeral=True)
+            return
+
+        parent = interaction.channel.parent
+        if not parent or parent.type != discord.ChannelType.forum:
+            await interaction.response.send_message("❌ /公开书单 只能在论坛帖中使用。", ephemeral=True)
+            return
+
+        if interaction.channel.owner_id != interaction.user.id:
+            await interaction.response.send_message("❌ 只有帖主（楼主）可以在本帖公开书单。", ephemeral=True)
+            return
+
         self.db.ensure_user_booklists(interaction.user.id)
         await interaction.response.send_modal(PublicBooklistModal(self))

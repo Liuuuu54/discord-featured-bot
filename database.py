@@ -82,6 +82,31 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_booklists_user ON user_booklists(user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_booklist_entries_user_list ON user_booklist_entries(user_id, list_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_public_booklists_user_active ON public_booklists(user_id, is_active)')
+
+        # 用户在指定群组的书单帖跳转链接（用于精選紀錄公开面板）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_booklist_thread_links (
+                user_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
+                thread_url TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, guild_id)
+            )
+        ''')
+
+        # 公开书单最小索引（不存快照，仅用于重启恢复分页按钮）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS public_booklist_indexes (
+                message_id INTEGER PRIMARY KEY,
+                publisher_user_id INTEGER NOT NULL,
+                list_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active INTEGER DEFAULT 1
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_public_booklist_indexes_active ON public_booklist_indexes(is_active)')
         
         conn.commit()
         conn.close()
@@ -740,3 +765,94 @@ class DatabaseManager:
         conn.commit()
         conn.close()
         return changed
+
+    def set_user_booklist_thread_url(self, user_id: int, guild_id: int, thread_url: str):
+        """设置或更新用户书单帖链接；空值视为删除。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+
+        if not thread_url or not thread_url.strip():
+            cursor.execute('''
+                DELETE FROM user_booklist_thread_links
+                WHERE user_id = ? AND guild_id = ?
+            ''', (user_id, guild_id))
+            conn.commit()
+            conn.close()
+            return
+
+        cursor.execute('''
+            INSERT INTO user_booklist_thread_links (user_id, guild_id, thread_url)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, guild_id) DO UPDATE SET
+                thread_url = excluded.thread_url,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (user_id, guild_id, thread_url.strip()))
+
+        conn.commit()
+        conn.close()
+
+    def get_user_booklist_thread_url(self, user_id: int, guild_id: int) -> Optional[str]:
+        """获取用户在指定群组绑定的书单帖链接。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT thread_url
+            FROM user_booklist_thread_links
+            WHERE user_id = ? AND guild_id = ?
+        ''', (user_id, guild_id))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def add_public_booklist_index(self, message_id: int, publisher_user_id: int, list_id: int,
+                                  guild_id: int, channel_id: int):
+        """保存公开书单最小索引。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO public_booklist_indexes
+            (message_id, publisher_user_id, list_id, guild_id, channel_id, is_active)
+            VALUES (?, ?, ?, ?, ?, 1)
+            ON CONFLICT(message_id) DO UPDATE SET
+                publisher_user_id = excluded.publisher_user_id,
+                list_id = excluded.list_id,
+                guild_id = excluded.guild_id,
+                channel_id = excluded.channel_id,
+                is_active = 1
+        ''', (message_id, publisher_user_id, list_id, guild_id, channel_id))
+        conn.commit()
+        conn.close()
+
+    def get_active_public_booklist_indexes(self) -> List[Dict]:
+        """获取所有仍激活的公开书单索引。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT message_id, publisher_user_id, list_id, guild_id, channel_id
+            FROM public_booklist_indexes
+            WHERE is_active = 1
+            ORDER BY published_at DESC
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {
+                'message_id': row[0],
+                'publisher_user_id': row[1],
+                'list_id': row[2],
+                'guild_id': row[3],
+                'channel_id': row[4],
+            }
+            for row in rows
+        ]
+
+    def deactivate_public_booklist_index(self, message_id: int):
+        """移除公开书单索引（消息被删除或不可访问时）。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM public_booklist_indexes
+            WHERE message_id = ?
+        ''', (message_id,))
+        conn.commit()
+        conn.close()

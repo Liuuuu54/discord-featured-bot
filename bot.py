@@ -259,6 +259,8 @@ class FeaturedMessageBot(commands.Bot):
         
     async def setup_hook(self):
         """机器人启动时的设置"""
+        # 註冊 persistent view（重啟後仍可點舊消息按鈕）
+        self.add_view(AppreciatorApplicationView(self))
         await self.add_cog(FeaturedCommands(self))
         await self.add_cog(BooklistCommands(self))
         await self.tree.sync()
@@ -276,6 +278,21 @@ class FeaturedMessageBot(commands.Bot):
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
         logger.info('📋 可用命令: /精选, /精选紀錄, /帖子统计, /總排行, /鑒賞申請窗口, /全服精选列表')
         logger.info('=' * 50)
+
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
+        """当消息被删除时，清理公开书单最小索引，避免数据膨胀。"""
+        try:
+            self.db.deactivate_public_booklist_index(payload.message_id)
+        except Exception as e:
+            logger.debug(f"清理公开书单索引失败(单条): {e}")
+
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent):
+        """当批量删消息时，清理公开书单最小索引。"""
+        for message_id in payload.message_ids:
+            try:
+                self.db.deactivate_public_booklist_index(message_id)
+            except Exception as e:
+                logger.debug(f"清理公开书单索引失败(批量): {e}")
     
     async def on_command_error(self, ctx, error):
         """处理命令错误"""
@@ -331,6 +348,12 @@ class FeaturedRecordsView(discord.ui.View):
         self.current_page = current_page
         self.per_page = config.USER_RECORDS_PER_PAGE
         self.record_type = record_type  # "featured" 或 "referral"
+
+    def _build_booklist_link_text(self) -> str:
+        thread_url = self.bot.db.get_user_booklist_thread_url(self.user_id, self.guild_id)
+        if not thread_url:
+            return "該用戶暫無書單帖"
+        return f"[點擊跳轉]({thread_url})"
     
     async def get_records_embed(self) -> discord.Embed:
         """獲取當前頁面的記錄嵌入訊息"""
@@ -344,7 +367,7 @@ class FeaturedRecordsView(discord.ui.View):
                 self.user_id, self.guild_id, self.current_page, self.per_page
             )
             title = f"🏆 {username} 的被精選記錄"
-            description = f"被其他用戶精選的記錄 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            description = f"被其他用戶精選的記錄 • 第 {self.current_page} 頁，共 {max(total_pages, 1)} 頁"
             empty_description = "還沒有被精選的記錄"
         else:
             # 獲取引薦記錄（用戶精選別人的記錄）
@@ -352,84 +375,87 @@ class FeaturedRecordsView(discord.ui.View):
                 self.user_id, self.guild_id, self.current_page, self.per_page
             )
             title = f"👥 {username} 的引薦記錄"
-            description = f"精選其他用戶的記錄 • 第 {self.current_page} 頁，共 {total_pages} 頁"
+            description = f"精選其他用戶的記錄 • 第 {self.current_page} 頁，共 {max(total_pages, 1)} 頁"
             empty_description = "還沒有引薦記錄"
-        
-        if not records:
-            embed = discord.Embed(
-                title=title,
-                description=empty_description,
-                color=0x00ff00,
-                timestamp=discord.utils.utcnow()
-            )
-            return embed
-        
+
         embed = discord.Embed(
             title=title,
-            description=description,
+            description=description if records else empty_description,
             color=0x00ff00,
             timestamp=discord.utils.utcnow()
         )
-        
-        for i, record in enumerate(records, 1):
-            # 格式化時間
-            featured_at = datetime.fromisoformat(record['featured_at'].replace('Z', '+00:00'))
-            formatted_time = featured_at.strftime('%Y-%m-%d %H:%M')
-            
-            # 創建帖子超連結
-            thread_link = f"https://discord.com/channels/{self.guild_id}/{record['thread_id']}"
-            
-            # 嘗試獲取帖子標題
-            thread_title = None
-            try:
-                channel = self.bot.get_channel(record['thread_id'])
-                if channel and hasattr(channel, 'name') and channel.name:
-                    thread_title = channel.name
-                else:
+
+        if records:
+            for i, record in enumerate(records, 1):
+                # 格式化時間
+                featured_at = datetime.fromisoformat(record['featured_at'].replace('Z', '+00:00'))
+                formatted_time = featured_at.strftime('%Y-%m-%d %H:%M')
+
+                # 創建帖子超連結
+                thread_link = f"https://discord.com/channels/{self.guild_id}/{record['thread_id']}"
+
+                # 嘗試獲取帖子標題
+                thread_title = None
+                try:
+                    channel = self.bot.get_channel(record['thread_id'])
+                    if channel and hasattr(channel, 'name') and channel.name:
+                        thread_title = channel.name
+                    else:
+                        thread_title = f"帖子 {record['thread_id']}"
+                except Exception as e:
                     thread_title = f"帖子 {record['thread_id']}"
-            except Exception as e:
-                thread_title = f"帖子 {record['thread_id']}"
-                logger.debug(f"無法獲取帖子標題 {record['thread_id']}: {e}")
-            
-            # 創建記錄描述
-            if self.record_type == "featured":
-                # 被精選記錄
-                description = f"📝 **精选原因**: {record['reason'] or '无'}\n"
-                description += f"👤 **精选者**: {record['featured_by_name']}\n"
-                description += f"📅 **精选时间**: {formatted_time}\n"
-            else:
-                # 引薦記錄
-                description = f"👤 **被精选用户**: {record['author_name']}\n"
-                description += f"📝 **精选原因**: {record['reason'] or '无'}\n"
-                description += f"📅 **精选时间**: {formatted_time}\n"
-            
-            # 使用帖子超連結
-            if thread_title:
-                description += f"🏷️ **原帖**: [{thread_title}]({thread_link})"
-            else:
-                description += f"🏷️ **原帖**: [點擊查看]({thread_link})"
-            
-            embed.add_field(
-                name=f"{i}. {'被精选记录' if self.record_type == 'featured' else '引荐记录'}",
-                value=description,
-                inline=False
-            )
-        
+                    logger.debug(f"無法獲取帖子標題 {record['thread_id']}: {e}")
+
+                # 創建記錄描述
+                if self.record_type == "featured":
+                    record_desc = f"📝 **精选原因**: {record['reason'] or '无'}\n"
+                    record_desc += f"👤 **精选者**: {record['featured_by_name']}\n"
+                    record_desc += f"📅 **精选时间**: {formatted_time}\n"
+                else:
+                    record_desc = f"👤 **被精选用户**: {record['author_name']}\n"
+                    record_desc += f"📝 **精选原因**: {record['reason'] or '无'}\n"
+                    record_desc += f"📅 **精选时间**: {formatted_time}\n"
+
+                if thread_title:
+                    record_desc += f"🏷️ **原帖**: [{thread_title}]({thread_link})"
+                else:
+                    record_desc += f"🏷️ **原帖**: [點擊查看]({thread_link})"
+
+                embed.add_field(
+                    name=f"{i}. {'被精选记录' if self.record_type == 'featured' else '引荐记录'}",
+                    value=record_desc,
+                    inline=False
+                )
+
+        stats = self.bot.db.get_user_stats(self.user_id, self.guild_id)
+        embed.add_field(
+            name="📈 精選統計",
+            value=f"**被精选次数**: {stats['featured_count']} 次\n"
+                  f"**引荐人数**: {stats['featuring_count']} 人",
+            inline=False
+        )
+
+        embed.add_field(
+            name="🔗 書單帖",
+            value=self._build_booklist_link_text(),
+            inline=False
+        )
+
+        if user:
+            embed.set_thumbnail(url=user.display_avatar.url)
+
         # 更新按鈕狀態
         self.update_buttons(total_pages)
-        
+
         return embed
     
     def update_buttons(self, total_pages: int):
         """更新按鈕狀態"""
-        # 第一頁按鈕
-        self.children[0].disabled = self.current_page <= 1
-        # 上一頁按鈕
-        self.children[1].disabled = self.current_page <= 1
-        # 下一頁按鈕
-        self.children[2].disabled = self.current_page >= total_pages
-        # 最後一頁按鈕
-        self.children[3].disabled = self.current_page >= total_pages
+        normalized_total_pages = max(total_pages, 1)
+        self.first_page.disabled = self.current_page <= 1
+        self.prev_page.disabled = self.current_page <= 1
+        self.next_page.disabled = self.current_page >= normalized_total_pages
+        self.last_page.disabled = self.current_page >= normalized_total_pages
     
     @discord.ui.button(label="第一頁", style=discord.ButtonStyle.gray, emoji="⏮️")
     async def first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1199,7 +1225,12 @@ class AppreciatorApplicationView(discord.ui.View):
         super().__init__(timeout=None)  # 永久有效
         self.bot = bot
     
-    @discord.ui.button(label="申请鉴赏家身份", style=discord.ButtonStyle.success, emoji="📜")
+    @discord.ui.button(
+        label="申请鉴赏家身份",
+        style=discord.ButtonStyle.success,
+        emoji="📜",
+        custom_id="appreciator:apply:v1"
+    )
     async def apply_appreciator(self, interaction: discord.Interaction, button: discord.ui.Button):
         """申请鉴赏家身份"""
         # 立即响应交互，避免超时
@@ -1212,13 +1243,16 @@ class AppreciatorApplicationView(discord.ui.View):
             # 检查被引荐人数或引荐人数要求（满足其中一个即可）
             featured_ok = stats['featured_count'] >= config.APPRECIATOR_MIN_FEATURED
             referrals_ok = stats['featuring_count'] >= config.APPRECIATOR_MIN_REFERRALS
+            booklist_link = self.bot.db.get_user_booklist_thread_url(interaction.user.id, interaction.guild_id)
+            booklist_ok = bool(booklist_link)
             
-            if not featured_ok and not referrals_ok:
+            if not featured_ok and not referrals_ok and not booklist_ok:
                 await interaction.followup.send(
                     f"❌ 申请条件不满足！\n"
                     f"需要满足以下条件之一：\n"
                     f"• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次（您当前被引荐了 {stats['featured_count']} 次）\n"
-                    f"• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人（您当前引荐了 {stats['featuring_count']} 人）",
+                    f"• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人（您当前引荐了 {stats['featuring_count']} 人）\n"
+                    f"• 绑定书单帖链接（您当前：{'已绑定' if booklist_ok else '未绑定'}）",
                     ephemeral=True
                 )
                 return
@@ -1322,10 +1356,12 @@ class AppreciatorApplicationView(discord.ui.View):
                     conditions_met.append(f"✅ 被引荐 {stats['featured_count']} 次（满足 {config.APPRECIATOR_MIN_FEATURED} 次要求）")
                 if stats['featuring_count'] >= config.APPRECIATOR_MIN_REFERRALS:
                     conditions_met.append(f"✅ 引荐 {stats['featuring_count']} 人（满足 {config.APPRECIATOR_MIN_REFERRALS} 人要求）")
+                if booklist_ok:
+                    conditions_met.append("✅ 已绑定书单帖链接")
                 
                 embed.add_field(
                     name="🎯 申请条件",
-                    value=f"**满足条件**：\n" + "\n".join(conditions_met) + f"\n\n**完整要求（满足其一即可）**：\n• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次\n• 引荐至少 {config.APPRECIATOR_MIN_REFERRALS} 人",
+                    value=f"**满足条件**：\n" + "\n".join(conditions_met) + f"\n\n**完整要求（满足其一即可）**：\n• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次\n• 引荐至少 {config.APPRECIATOR_MIN_REFERRALS} 人\n• 已绑定书单帖链接",
                     inline=False
                 )
                 
@@ -1585,27 +1621,14 @@ class FeaturedCommands(commands.Cog):
             target_user = message.author
             user_id = target_user.id
             
-            # 獲取用戶統計信息
-            stats = self.db.get_user_stats(user_id, interaction.guild_id)
-            
             # 創建分頁視圖（默認顯示被精選記錄）
             view = FeaturedRecordsView(self.bot, user_id, interaction.guild_id, 1, "featured")
             
             # 先準備好嵌入訊息，避免在發送回應後再調用異步方法
             embed = await view.get_records_embed()
             
-            # 添加統計到嵌入訊息
-            embed.add_field(
-                name="📈 精選統計",
-                value=f"**被精选次数**: {stats['featured_count']} 次\n"
-                      f"**引荐人数**: {stats['featuring_count']} 人",
-                inline=False
-            )
-            
-            embed.set_thumbnail(url=target_user.display_avatar.url)
-            
-            # 所有查看統計都使用 ephemeral=True，避免聊天頻道被塞爆
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            # 精選紀錄為公開頁面，方便其他用戶跳轉書單帖
+            await interaction.response.send_message(embed=embed, view=view)
             
         except Exception as e:
             logger.error(f"右鍵查看精選紀錄時發生錯誤: {e}")
@@ -1926,7 +1949,6 @@ class FeaturedCommands(commands.Cog):
                 user = interaction.user
             
             user_id = user.id
-            stats = self.db.get_user_stats(user_id, interaction.guild_id)
             
             # 創建分頁視圖（默認顯示被精選記錄）
             view = FeaturedRecordsView(self.bot, user_id, interaction.guild_id, 1, "featured")
@@ -1934,20 +1956,8 @@ class FeaturedCommands(commands.Cog):
             # 先準備好嵌入訊息，避免在發送回應後再調用異步方法
             embed = await view.get_records_embed()
             
-
-            
-            # 添加統計到嵌入訊息
-            embed.add_field(
-                name="📈 精選統計",
-                value=f"**被精选次数**: {stats['featured_count']} 次\n"
-                      f"**引荐人数**: {stats['featuring_count']} 人",
-                inline=False
-            )
-            
-            embed.set_thumbnail(url=user.display_avatar.url)
-            
-            # 所有查看統計都使用 ephemeral=True，避免聊天頻道被塞爆
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            # 精選紀錄為公開頁面，方便其他用戶跳轉書單帖
+            await interaction.response.send_message(embed=embed, view=view)
             
         except Exception as e:
             logger.error(f"查看精選紀錄時發生錯誤: {e}")
@@ -2027,7 +2037,8 @@ class FeaturedCommands(commands.Cog):
                 name="📋 申请条件",
                 value=f"**满足以下条件之一即可**：\n"
                       f"• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次\n"
-                      f"• 引荐至少 {config.APPRECIATOR_MIN_REFERRALS} 人",
+                      f"• 引荐至少 {config.APPRECIATOR_MIN_REFERRALS} 人\n"
+                      f"• 已绑定书单帖链接（可在 `/管理书单` 设置）",
                 inline=False
             )
             embed.add_field(
