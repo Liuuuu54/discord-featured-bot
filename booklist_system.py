@@ -35,6 +35,13 @@ def _is_valid_discord_url(url: str) -> bool:
     return re.match(pattern, url.strip()) is not None
 
 
+def _parse_discord_url(url: str) -> Optional[tuple[int, int]]:
+    match = re.match(r"^https://discord\.com/channels/(\d+)/(\d+)(?:/\d+)?$", url.strip())
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
 class AddToBooklistModal(discord.ui.Modal, title="添加至书单"):
     def __init__(self, cog, thread: discord.Thread):
         super().__init__()
@@ -251,6 +258,81 @@ class LinkBooklistThreadModal(discord.ui.Modal, title="连结书单帖"):
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
+class AddPostByUrlModal(discord.ui.Modal, title="添加至书单（URL）"):
+    def __init__(self, view):
+        super().__init__()
+        self.view = view
+        self.list_id_input = discord.ui.TextInput(
+            label="书单 ID (0~9)",
+            placeholder="输入 0 到 9",
+            required=True,
+            max_length=1,
+        )
+        self.url_input = discord.ui.TextInput(
+            label="帖子 URL",
+            placeholder="https://discord.com/channels/<guild_id>/<thread_id>",
+            required=True,
+            max_length=300,
+        )
+        self.review_input = discord.ui.TextInput(
+            label="帖子评价（可选）",
+            placeholder="可以留空",
+            required=False,
+            max_length=500,
+            style=discord.TextStyle.paragraph,
+        )
+        self.add_item(self.list_id_input)
+        self.add_item(self.url_input)
+        self.add_item(self.review_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        list_id = _safe_int(self.list_id_input.value)
+        if list_id is None or not (0 <= list_id <= 9):
+            await interaction.response.send_message("❌ 书单 ID 必须是 0~9。", ephemeral=True)
+            return
+
+        raw_url = (self.url_input.value or "").strip()
+        parsed = _parse_discord_url(raw_url)
+        if not parsed:
+            await interaction.response.send_message("❌ 帖子 URL 格式错误。", ephemeral=True)
+            return
+
+        guild_id, thread_id = parsed
+        if self.view.cog.bot.get_guild(guild_id) is None:
+            await interaction.response.send_message("❌ 该服务器未接入本 Bot，无法添加。", ephemeral=True)
+            return
+
+        channel = self.view.cog.bot.get_channel(thread_id)
+        if channel is None:
+            try:
+                channel = await self.view.cog.bot.fetch_channel(thread_id)
+            except Exception:
+                await interaction.response.send_message("❌ 无法读取该帖子，请检查 URL 是否正确。", ephemeral=True)
+                return
+
+        if not isinstance(channel, discord.Thread):
+            await interaction.response.send_message("❌ 该 URL 不是帖子链接，请提供论坛帖 URL。", ephemeral=True)
+            return
+
+        review = (self.review_input.value or "").strip()
+        success, msg = self.view.cog.db.add_post_to_booklist(
+            user_id=self.view.user_id,
+            list_id=list_id,
+            thread_guild_id=guild_id,
+            thread_id=thread_id,
+            thread_title=channel.name or f"帖子 {thread_id}",
+            thread_url=f"https://discord.com/channels/{guild_id}/{thread_id}",
+            review=review,
+        )
+        if not success:
+            await interaction.response.send_message(f"❌ {msg}", ephemeral=True)
+            return
+
+        self.view.current_list_id = list_id
+        embed = self.view.build_embed(extra_notice=f"✅ 已添加帖子：{channel.name}")
+        await interaction.response.edit_message(embed=embed, view=self.view)
+
+
 class ManageBooklistView(discord.ui.View):
     def __init__(self, cog, user_id: int, guild_id: int, current_list_id: int = 0):
         super().__init__(timeout=600)
@@ -336,6 +418,10 @@ class ManageBooklistView(discord.ui.View):
     @discord.ui.button(label="连结书单帖", style=discord.ButtonStyle.primary, emoji="🔗", row=1)
     async def link_booklist_thread(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(LinkBooklistThreadModal(self))
+
+    @discord.ui.button(label="添加帖子", style=discord.ButtonStyle.success, emoji="➕", row=1)
+    async def add_post_by_url(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(AddPostByUrlModal(self))
 
 
 class PublicBooklistPagerView(discord.ui.View):
