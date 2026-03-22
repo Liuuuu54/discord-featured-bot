@@ -5,6 +5,7 @@ from typing import Optional
 import discord
 from discord import app_commands
 from discord.ext import commands
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -285,7 +286,11 @@ class ManageBooklistView(discord.ui.View):
                 title = _truncate(entry['thread_title'], 40)
                 review = entry['review'].strip() if entry['review'] else "（无评价）"
                 review = _truncate(review, 50)
-                lines.append(f"`{idx:02}` [{title}]({entry['thread_url']})\n评价：{review}")
+                lines.append(
+                    f"🆔 ID：`{idx:02}`\n"
+                    f"🔗 连结：[{title}]({entry['thread_url']})\n"
+                    f"📝 评价：{review}"
+                )
             embed.add_field(name="帖子列表", value="\n".join(lines), inline=False)
         else:
             embed.add_field(name="帖子列表", value="暂无帖子。", inline=False)
@@ -365,8 +370,12 @@ class PublicBooklistPagerView(discord.ui.View):
             for idx, entry in enumerate(page_entries, start + 1):
                 title = _truncate(entry['thread_title'], 60)
                 review = entry['review'].strip() if entry['review'] else ""
-                review_text = f" | 评价：{_truncate(review, 50)}" if review else ""
-                lines.append(f"`{idx:02}` [{title}]({entry['thread_url']}){review_text}")
+                review_text = _truncate(review, 50) if review else "（无评价）"
+                lines.append(
+                    f"🆔 ID：`{idx:02}`\n"
+                    f"🔗 连结：[{title}]({entry['thread_url']})\n"
+                    f"📝 评价：{review_text}"
+                )
             embed.add_field(
                 name=f"帖子列表（第 {self.current_page}/{total_pages} 页，共 {total_entries} 帖）",
                 value="\n".join(lines),
@@ -398,6 +407,30 @@ class PublicBooklistPagerView(discord.ui.View):
         embed, total_pages = self._build_embed_and_pages()
         self._update_buttons(total_pages)
         await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="删除书单", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="booklist_public:delete:v1", row=1)
+    async def delete_public_booklist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        is_publisher = interaction.user.id == self.publisher_user_id
+        has_role_admin = False
+        has_perm_admin = False
+
+        if interaction.guild and hasattr(interaction.user, "roles"):
+            has_role_admin = any(role.name in config.ADMIN_ROLE_NAMES for role in interaction.user.roles)
+
+        if interaction.guild and hasattr(interaction.user, "guild_permissions"):
+            has_perm_admin = interaction.user.guild_permissions.manage_messages or interaction.user.guild_permissions.administrator
+
+        if not is_publisher and not has_role_admin and not has_perm_admin:
+            await interaction.response.send_message("❌ 只有发布者、Bot 管理组或服务器管理员可以删除这条公开书单。", ephemeral=True)
+            return
+
+        try:
+            self.cog.db.deactivate_public_booklist_index(interaction.message.id)
+            await interaction.message.delete()
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ 我没有删除该消息的权限，请联系管理员。", ephemeral=True)
+        except Exception:
+            await interaction.response.send_message("❌ 删除失败，请稍后重试。", ephemeral=True)
 
 
 class PublicBooklistModal(discord.ui.Modal, title="公开书单"):

@@ -276,8 +276,43 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精选, /精选紀錄, /帖子统计, /總排行, /鑒賞申請窗口, /全服精选列表')
+        logger.info('📋 可用命令: /精选, /精选记录, /帖子统计, /总排行, /鉴赏申请窗口, /全服精选列表, /添加至书单, /管理书单, /公开书单')
         logger.info('=' * 50)
+
+    async def on_interaction(self, interaction: discord.Interaction):
+        """统一记录交互日志，覆盖斜杠命令/右键菜单/按钮/表单。"""
+        try:
+            guild_name = interaction.guild.name if interaction.guild else "DM"
+            guild_id = interaction.guild.id if interaction.guild else 0
+            channel_id = interaction.channel.id if interaction.channel else 0
+            user_name = interaction.user.name if interaction.user else "Unknown"
+            user_id = interaction.user.id if interaction.user else 0
+
+            # 斜杠命令 / 右键菜单
+            if interaction.type == discord.InteractionType.application_command:
+                command_name = interaction.command.qualified_name if interaction.command else "unknown"
+                logger.info(
+                    f"🧭 交互: application_command | 命令: {command_name} | 用户: {user_name}({user_id}) | "
+                    f"群组: {guild_name}({guild_id}) | 频道: {channel_id}"
+                )
+            # 按钮、下拉菜单等组件
+            elif interaction.type == discord.InteractionType.component:
+                custom_id = interaction.data.get("custom_id") if interaction.data else "unknown"
+                logger.info(
+                    f"🧭 交互: component | custom_id: {custom_id} | 用户: {user_name}({user_id}) | "
+                    f"群组: {guild_name}({guild_id}) | 频道: {channel_id}"
+                )
+            # Modal 表单提交
+            elif interaction.type == discord.InteractionType.modal_submit:
+                custom_id = interaction.data.get("custom_id") if interaction.data else "unknown"
+                logger.info(
+                    f"🧭 交互: modal_submit | custom_id: {custom_id} | 用户: {user_name}({user_id}) | "
+                    f"群组: {guild_name}({guild_id}) | 频道: {channel_id}"
+                )
+        except Exception as e:
+            logger.debug(f"记录交互日志失败: {e}")
+
+        await super().on_interaction(interaction)
 
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
         """当消息被删除时，清理公开书单最小索引，避免数据膨胀。"""
@@ -1404,7 +1439,7 @@ class FeaturedCommands(commands.Cog):
         
         # 註冊 Message Context Menu
         context_menu = app_commands.ContextMenu(
-            name="精選此留言",
+            name="精选此留言",
             callback=self.context_feature_message
         )
         self.bot.tree.add_command(context_menu)
@@ -1412,7 +1447,7 @@ class FeaturedCommands(commands.Cog):
         
         # 註冊取消精選 Context Menu
         unfeature_menu = app_commands.ContextMenu(
-            name="取消精選",
+            name="取消精选",
             callback=self.context_unfeature_message
         )
         self.bot.tree.add_command(unfeature_menu)
@@ -1420,7 +1455,7 @@ class FeaturedCommands(commands.Cog):
         
         # 註冊查看精選紀錄 Context Menu
         points_menu = app_commands.ContextMenu(
-            name="查看精選紀錄",
+            name="查看精选记录",
             callback=self.context_check_featured_stats
         )
         self.bot.tree.add_command(points_menu)
@@ -1627,8 +1662,8 @@ class FeaturedCommands(commands.Cog):
             # 先準備好嵌入訊息，避免在發送回應後再調用異步方法
             embed = await view.get_records_embed()
             
-            # 精選紀錄為公開頁面，方便其他用戶跳轉書單帖
-            await interaction.response.send_message(embed=embed, view=view)
+            # 精选记录默认私密回覆，避免洗版
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             logger.error(f"右鍵查看精選紀錄時發生錯誤: {e}")
@@ -1873,7 +1908,7 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
                 
-    @app_commands.command(name="總排行", description="查看引薦人數排行榜（僅管理組可用，支持時間範圍）")
+    @app_commands.command(name="总排行", description="查看引薦人數排行榜（僅管理組可用，支持時間範圍）")
     @app_commands.describe(
         start_date="起始日期（可选，格式：YYYY-MM-DD，例如：2024-01-01）",
         end_date="结束日期（可选，格式：YYYY-MM-DD，例如：2024-12-31）"
@@ -1936,7 +1971,7 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
     
-    @app_commands.command(name="精選紀錄", description="查看用戶精選紀錄與引荐統計（如果沒有指定用戶，默認查看自己）")
+    @app_commands.command(name="精选记录", description="查看用戶精選紀錄與引荐統計（如果沒有指定用戶，默認查看自己）")
     async def check_featured_stats(self, interaction: discord.Interaction, user: discord.Member = None):
         """查看精選紀錄命令（支持查看其他用戶）"""
         # 记录命令使用
@@ -1956,8 +1991,8 @@ class FeaturedCommands(commands.Cog):
             # 先準備好嵌入訊息，避免在發送回應後再調用異步方法
             embed = await view.get_records_embed()
             
-            # 精選紀錄為公開頁面，方便其他用戶跳轉書單帖
-            await interaction.response.send_message(embed=embed, view=view)
+            # 精选记录默认私密回覆，避免洗版
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             logger.error(f"查看精選紀錄時發生錯誤: {e}")
