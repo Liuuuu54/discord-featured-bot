@@ -312,8 +312,6 @@ class FeaturedMessageBot(commands.Bot):
         except Exception as e:
             logger.debug(f"记录交互日志失败: {e}")
 
-        await super().on_interaction(interaction)
-
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
         """当消息被删除时，清理公开书单最小索引，避免数据膨胀。"""
         try:
