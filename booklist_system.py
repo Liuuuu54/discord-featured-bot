@@ -5,6 +5,7 @@ from typing import Optional
 import discord
 from discord import app_commands
 from discord.ext import commands
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,12 @@ def _parse_discord_url(url: str) -> Optional[tuple[int, int]]:
     if not match:
         return None
     return int(match.group(1)), int(match.group(2))
+
+
+def _has_booklist_admin_permission(member: discord.Member) -> bool:
+    has_role = any(role.name in config.ADMIN_ROLE_NAMES for role in member.roles)
+    has_perm = member.guild_permissions.manage_messages or member.guild_permissions.administrator
+    return has_role or has_perm
 
 
 class AddToBooklistModal(discord.ui.Modal, title="添加至书单"):
@@ -251,6 +258,41 @@ class LinkBooklistThreadModal(discord.ui.Modal, title="连结书单帖"):
         if url and not _is_valid_discord_url(url):
             await interaction.response.send_message("❌ URL 格式错误，请填写 Discord 链接。", ephemeral=True)
             return
+
+        if url:
+            parsed = _parse_discord_url(url)
+            if not parsed:
+                await interaction.response.send_message("❌ URL 解析失败，请检查链接。", ephemeral=True)
+                return
+
+            guild_id, thread_id = parsed
+            if self.view.cog.bot.get_guild(guild_id) is None:
+                await interaction.response.send_message("❌ 该服务器未接入本 Bot，无法绑定。", ephemeral=True)
+                return
+
+            channel = self.view.cog.bot.get_channel(thread_id)
+            if channel is None:
+                try:
+                    channel = await self.view.cog.bot.fetch_channel(thread_id)
+                except Exception:
+                    await interaction.response.send_message("❌ 无法读取该帖子，请检查 URL 是否正确。", ephemeral=True)
+                    return
+
+            if not isinstance(channel, discord.Thread):
+                await interaction.response.send_message("❌ 该链接不是帖子链接，请绑定论坛帖 URL。", ephemeral=True)
+                return
+
+            if channel.owner_id != interaction.user.id:
+                await interaction.response.send_message("❌ 只能绑定你自己作为楼主的帖子。", ephemeral=True)
+                return
+
+            whitelist_forum_id = self.view.cog.db.get_booklist_thread_whitelist(interaction.guild_id)
+            if whitelist_forum_id and channel.parent_id != whitelist_forum_id:
+                await interaction.response.send_message("❌ 该帖子不在白名单论坛内，无法绑定。", ephemeral=True)
+                return
+
+            # 统一归一化为帖子层级链接，避免消息链接带来的歧义
+            url = f"https://discord.com/channels/{guild_id}/{thread_id}"
 
         self.view.cog.db.set_user_booklist_thread_url(self.view.user_id, self.view.guild_id, url)
         notice = "✅ 已更新书单帖连结。" if url else "✅ 已清除书单帖连结。"
@@ -572,6 +614,98 @@ class PublicBooklistModal(discord.ui.Modal, title="公开书单"):
         )
 
 
+class GuildBooklistAdminView(discord.ui.View):
+    def __init__(self, cog, guild_id: int, operator_id: int, page: int = 1):
+        super().__init__(timeout=600)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.operator_id = operator_id
+        self.page = page
+        self.per_page = 10
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.operator_id:
+            await interaction.response.send_message("❌ 这是他人的管理面板。", ephemeral=True)
+            return False
+        return True
+
+    def build_embed(self) -> tuple[discord.Embed, int]:
+        rows, total_pages = self.cog.db.get_guild_booklist_summary(self.guild_id, self.page, self.per_page)
+        whitelist_forum_id = self.cog.db.get_booklist_thread_whitelist(self.guild_id)
+
+        embed = discord.Embed(
+            title="📚 全服书单列表",
+            description=f"本服有书单内容的用户（第 {self.page}/{total_pages} 页）",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow(),
+        )
+        if whitelist_forum_id:
+            embed.add_field(
+                name="🔒 书单帖白名单",
+                value=f"<#{whitelist_forum_id}>（仅该论坛下帖子可绑定）",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🔓 书单帖白名单",
+                value="未设置（允许任意论坛帖绑定）",
+                inline=False
+            )
+
+        if rows:
+            lines = []
+            for idx, row in enumerate(rows, 1):
+                lines.append(
+                    f"`{idx:02}` 👤 <@{row['user_id']}> | 📚 非空书单: {row['active_list_count']} | 🧩 总帖子: {row['total_posts']}"
+                )
+            embed.add_field(name="用户概览", value="\n".join(lines), inline=False)
+        else:
+            embed.add_field(name="用户概览", value="暂无用户创建书单内容。", inline=False)
+
+        self.prev_page.disabled = self.page <= 1
+        self.next_page.disabled = self.page >= total_pages
+        return embed, total_pages
+
+    @discord.ui.button(label="上一页", style=discord.ButtonStyle.secondary, emoji="◀️")
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page -= 1
+        embed, _ = self.build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="下一页", style=discord.ButtonStyle.secondary, emoji="▶️")
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page += 1
+        embed, _ = self.build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="设为当前论坛白名单", style=discord.ButtonStyle.primary, emoji="📌", row=1)
+    async def set_whitelist_current_forum(self, interaction: discord.Interaction, button: discord.ui.Button):
+        forum_channel = None
+        if isinstance(interaction.channel, discord.ForumChannel):
+            forum_channel = interaction.channel
+        elif isinstance(interaction.channel, discord.Thread) and interaction.channel.parent and interaction.channel.parent.type == discord.ChannelType.forum:
+            forum_channel = interaction.channel.parent
+
+        if forum_channel is None:
+            await interaction.response.send_message("❌ 请在论坛频道或其帖子内使用该按钮。", ephemeral=True)
+            return
+
+        self.cog.db.set_booklist_thread_whitelist(self.guild_id, forum_channel.id)
+        embed, _ = self.build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="清除白名单", style=discord.ButtonStyle.danger, emoji="🧹", row=1)
+    async def clear_whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.cog.db.clear_booklist_thread_whitelist(self.guild_id)
+        embed, _ = self.build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="刷新", style=discord.ButtonStyle.secondary, emoji="🔄", row=1)
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed, _ = self.build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
 class BooklistCommands(commands.Cog):
     """书单独立模块"""
 
@@ -618,7 +752,6 @@ class BooklistCommands(commands.Cog):
             await interaction.response.send_message("❌ 此命令只能在帖子中使用。", ephemeral=True)
             return
 
-        self.db.ensure_user_booklists(interaction.user.id)
         await interaction.response.send_modal(AddToBooklistModal(self, interaction.channel))
 
     @app_commands.command(name="管理书单", description="管理你的 10 张书单（仅自己可见）")
@@ -645,3 +778,17 @@ class BooklistCommands(commands.Cog):
 
         self.db.ensure_user_booklists(interaction.user.id)
         await interaction.response.send_modal(PublicBooklistModal(self))
+
+    @app_commands.command(name="全服书单列表", description="查看全服书单概览并设置书单帖白名单（管理组）")
+    async def guild_booklist_overview(self, interaction: discord.Interaction):
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("❌ 该命令只能在服务器内使用。", ephemeral=True)
+            return
+
+        if not _has_booklist_admin_permission(interaction.user):
+            await interaction.response.send_message("❌ 仅管理组可使用该命令。", ephemeral=True)
+            return
+
+        view = GuildBooklistAdminView(self, interaction.guild_id, interaction.user.id, page=1)
+        embed, _ = view.build_embed()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)

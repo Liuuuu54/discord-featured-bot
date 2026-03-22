@@ -95,6 +95,15 @@ class DatabaseManager:
             )
         ''')
 
+        # 书单帖白名单（每个群组可指定一个论坛频道）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS booklist_thread_whitelist (
+                guild_id INTEGER PRIMARY KEY,
+                forum_channel_id INTEGER NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # 公开书单最小索引（不存快照，仅用于重启恢复分页按钮）
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS public_booklist_indexes (
@@ -879,5 +888,83 @@ class DatabaseManager:
             DELETE FROM public_booklist_indexes
             WHERE message_id = ?
         ''', (message_id,))
+        conn.commit()
+        conn.close()
+
+    def get_guild_booklist_summary(self, guild_id: int, page: int = 1, per_page: int = 10) -> Tuple[List[Dict], int]:
+        """获取本服书单概览：至少有 1 帖书单内容的用户。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT COUNT(*) FROM (
+                SELECT user_id
+                FROM user_booklist_entries
+                WHERE thread_guild_id = ?
+                GROUP BY user_id
+            ) t
+        ''', (guild_id,))
+        total_users = cursor.fetchone()[0]
+        total_pages = (total_users + per_page - 1) // per_page if total_users > 0 else 1
+
+        offset = (page - 1) * per_page
+        cursor.execute('''
+            SELECT
+                user_id,
+                COUNT(DISTINCT list_id) AS active_list_count,
+                COUNT(*) AS total_posts
+            FROM user_booklist_entries
+            WHERE thread_guild_id = ?
+            GROUP BY user_id
+            ORDER BY total_posts DESC, user_id ASC
+            LIMIT ? OFFSET ?
+        ''', (guild_id, per_page, offset))
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            {
+                'user_id': row[0],
+                'active_list_count': row[1],
+                'total_posts': row[2]
+            }
+            for row in rows
+        ], total_pages
+
+    def set_booklist_thread_whitelist(self, guild_id: int, forum_channel_id: int):
+        """设置本服书单帖白名单论坛频道。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO booklist_thread_whitelist (guild_id, forum_channel_id, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(guild_id) DO UPDATE SET
+                forum_channel_id = excluded.forum_channel_id,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (guild_id, forum_channel_id))
+        conn.commit()
+        conn.close()
+
+    def get_booklist_thread_whitelist(self, guild_id: int) -> Optional[int]:
+        """获取本服书单帖白名单论坛频道ID。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT forum_channel_id
+            FROM booklist_thread_whitelist
+            WHERE guild_id = ?
+        ''', (guild_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def clear_booklist_thread_whitelist(self, guild_id: int):
+        """清除本服书单帖白名单。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM booklist_thread_whitelist
+            WHERE guild_id = ?
+        ''', (guild_id,))
         conn.commit()
         conn.close()

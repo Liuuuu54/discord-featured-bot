@@ -276,7 +276,7 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /精选, /精选记录, /帖子统计, /总排行, /鉴赏申请窗口, /全服精选列表, /添加至书单, /管理书单, /公开书单')
+        logger.info('📋 可用命令: /精选, /精选记录, /帖子统计, /总排行, /鉴赏申请窗口, /全服精选列表, /添加至书单, /管理书单, /公开书单, /全服书单列表')
         logger.info('=' * 50)
 
     async def on_interaction(self, interaction: discord.Interaction):
