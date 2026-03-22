@@ -341,6 +341,18 @@ class ManageBooklistView(discord.ui.View):
         self.guild_id = guild_id
         self.current_list_id = current_list_id
 
+        # 功能性重排：上一张 下一张 添加帖子 删帖子 搬帖子 改标题 改评价 连结书单帖 刷新
+        self.clear_items()
+        self.add_item(self.prev_list)
+        self.add_item(self.next_list)
+        self.add_item(self.add_post_by_url)
+        self.add_item(self.delete_entry)
+        self.add_item(self.move_entry)
+        self.add_item(self.rename_list)
+        self.add_item(self.edit_review)
+        self.add_item(self.link_booklist_thread)
+        self.add_item(self.refresh)
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ 这是别人的书单管理页。", ephemeral=True)
@@ -403,7 +415,7 @@ class ManageBooklistView(discord.ui.View):
     async def delete_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(DeleteEntryModal(self))
 
-    @discord.ui.button(label="搬移", style=discord.ButtonStyle.success, emoji="📦")
+    @discord.ui.button(label="搬帖子", style=discord.ButtonStyle.success, emoji="📦")
     async def move_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(MoveEntryModal(self))
 
@@ -415,11 +427,11 @@ class ManageBooklistView(discord.ui.View):
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
-    @discord.ui.button(label="连结书单帖", style=discord.ButtonStyle.primary, emoji="🔗", row=1)
+    @discord.ui.button(label="连结书单帖", style=discord.ButtonStyle.primary, emoji="🔗")
     async def link_booklist_thread(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(LinkBooklistThreadModal(self))
 
-    @discord.ui.button(label="添加帖子", style=discord.ButtonStyle.success, emoji="➕", row=1)
+    @discord.ui.button(label="加帖子", style=discord.ButtonStyle.success, emoji="➕")
     async def add_post_by_url(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AddPostByUrlModal(self))
 
