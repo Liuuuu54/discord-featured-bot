@@ -1930,7 +1930,7 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
                 
-    @app_commands.command(name="总排行", description="查看引薦人數排行榜（僅管理組可用，支持時間範圍）")
+    @app_commands.command(name="总排行", description="查看引薦人數排行榜（管理組，支持時間範圍）")
     @app_commands.describe(
         start_date="起始日期（可选，格式：YYYY-MM-DD，例如：2024-01-01）",
         end_date="结束日期（可选，格式：YYYY-MM-DD，例如：2024-12-31）"
@@ -2062,7 +2062,7 @@ class FeaturedCommands(commands.Cog):
     
 
 
-    @app_commands.command(name="鉴赏申请窗口", description="创建鉴赏家申请窗口（仅管理组可用）")
+    @app_commands.command(name="鉴赏申请窗口", description="创建鉴赏家申请窗口（管理组）")
     async def create_appreciator_window(self, interaction: discord.Interaction):
         """创建鉴赏申请窗口命令（仅管理组可用）"""
         # 记录命令使用
@@ -2134,7 +2134,7 @@ class FeaturedCommands(commands.Cog):
             except Exception as followup_error:
                 logger.error(f"发送错误消息时发生错误: {followup_error}")
 
-    @app_commands.command(name="全服精选列表", description="查看全服精選留言列表（仅管理组可用，支持时间范围和时间/讚数排序）")
+    @app_commands.command(name="全服精选列表", description="查看全服精選留言列表（管理组，支持时间范围和时间/讚数排序）")
     @app_commands.describe(
         start_date="起始日期（可选，格式：YYYY-MM-DD，例如：2024-01-01）",
         end_date="结束日期（可选，格式：YYYY-MM-DD，例如：2024-12-31）"

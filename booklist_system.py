@@ -700,6 +700,13 @@ class GuildBooklistAdminView(discord.ui.View):
         embed, _ = self.build_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
+    @discord.ui.button(label="解绑全服书单帖连结", style=discord.ButtonStyle.danger, emoji="🧨", row=2)
+    async def clear_all_links(self, interaction: discord.Interaction, button: discord.ui.Button):
+        affected = self.cog.db.clear_all_booklist_thread_links_in_guild(self.guild_id)
+        embed, _ = self.build_embed()
+        embed.add_field(name="批量操作结果", value=f"✅ 已清除 {affected} 条书单帖连结绑定。", inline=False)
+        await interaction.response.edit_message(embed=embed, view=self)
+
     @discord.ui.button(label="刷新", style=discord.ButtonStyle.secondary, emoji="🔄", row=1)
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed, _ = self.build_embed()

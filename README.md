@@ -1,6 +1,6 @@
 # 留言精選 Discord Bot
 
-> 版本：2.0.0
+> 版本：2.0.2
 
 一个专为Discord论坛设计的留言精選机器人，允许楼主将优质留言设为精選。支持精选记录、引荐统计与书单功能。
 
@@ -211,6 +211,21 @@ python bot.py
   - 机器人重启后可继续翻页（基于最小索引恢复）
   - 不提供内建删除按钮（可由其他管理 Bot/权限体系处理）
 
+### 🧭 /全服书单列表
+查看全服书单概览并管理书单帖白名单（仅管理组可用）
+- **权限**: 需要管理组角色或管理权限
+  - 支持角色名称：可在 `config.py` 中自定义
+  - 默认角色：管理组、秘书组、BOT维护员、版主、Admin、Moderator
+  - 或拥有管理消息权限
+  - 或拥有管理员权限
+- **功能**:
+  - 分页查看本服「至少有 1 帖书单内容」的用户列表
+  - 设置当前论坛为书单帖白名单（限制绑定来源）
+  - 清除书单帖白名单
+  - 一键解绑全服用户书单帖连结（用于误绑紧急清理）
+- **回覆可见性**:
+  - 私密回覆（仅操作者可见）
+
 ### 🏆 /总排行
 显示引荐人数排行榜（仅管理组可用，支持时间范围）
 - **权限**: 需要管理组角色或管理权限
@@ -304,6 +319,8 @@ python bot.py
 </details>
 
 ## 数据管理
+<details>
+<summary>展开 / 收起 数据管理</summary>
 
 ### 数据目录结构
 机器人会自动创建以下目录结构：
@@ -331,8 +348,48 @@ data/
 - `reason`: 精选原因
 - `bot_message_id`: 机器人精选通知消息ID
 
+### user_booklists (用户书单主表)
+- `user_id`: 用户ID
+- `list_id`: 书单ID（0~9）
+- `title`: 书单标题
+- `created_at`: 创建时间
+- `updated_at`: 更新时间
+
+### user_booklist_entries (书单帖子明细)
+- `id`: 明细ID
+- `user_id`: 用户ID
+- `list_id`: 书单ID
+- `thread_guild_id`: 帖子所属群组ID
+- `thread_id`: 帖子ID
+- `thread_title`: 帖子标题
+- `thread_url`: 帖子链接
+- `review`: 帖子评价
+- `added_at`: 添加时间
+
+### user_booklist_thread_links (书单帖连结绑定)
+- `user_id`: 用户ID
+- `guild_id`: 群组ID
+- `thread_url`: 绑定的书单帖链接
+- `updated_at`: 更新时间
+
+### public_booklist_indexes (公开书单最小索引)
+- `message_id`: 公开消息ID
+- `publisher_user_id`: 发布者用户ID
+- `list_id`: 书单ID
+- `guild_id`: 群组ID
+- `channel_id`: 频道ID
+- `published_at`: 发布时间
+
+### booklist_thread_whitelist (书单帖白名单)
+- `guild_id`: 群组ID
+- `forum_channel_id`: 白名单论坛频道ID
+- `updated_at`: 更新时间
+
+</details>
 
 ## 工具说明
+<details>
+<summary>展开 / 收起 工具说明</summary>
 
 ### 数据库检查工具
 ```bash
@@ -375,7 +432,11 @@ python guild_data_extractor.py all
 
 **注意**: v1.4.1版本已移除月度积分功能，提取工具不再包含月度积分数据。
 
+</details>
+
 ## 故障排除
+<details>
+<summary>展开 / 收起 故障排除</summary>
 
 ### 常见问题
 
@@ -399,6 +460,7 @@ python guild_data_extractor.py all
    - 确认数据库结构完整
 
 
+</details>
 
 ### 日志查看
 机器人运行时会输出详细日志，包括:
@@ -414,6 +476,13 @@ python guild_data_extractor.py all
 ## 更新日志
 <details>
 <summary>展开 / 收起 更新日志</summary>
+
+### v2.0.2
+- 🗂️ **书单管理面板优化**: 按钮顺序重排，提升高频操作效率
+- ➕ **URL 加帖入口**: 面板新增“加帖子”按钮，支持 `书单ID + 帖URL + 评论` 直接添加
+- 🧾 **展示格式优化**: 书单管理与公开书单统一为 `ID / 标题 / 连结 / 评价` 四栏显示
+- 🧭 **全服书单管理**: 新增 `/全服书单列表`，支持白名单设置与批量解绑
+- 🛡️ **误绑防护**: 绑定书单帖时强制校验“操作用户必须是该帖楼主”
 
 ### v2.0.1
 - 🚪 **书单帖守门**: 绑定书单帖后，仅绑定者（楼主）可在该帖发言，其他用户留言会被 Bot 自动删除（反应不受影响）

@@ -968,3 +968,16 @@ class DatabaseManager:
         ''', (guild_id,))
         conn.commit()
         conn.close()
+
+    def clear_all_booklist_thread_links_in_guild(self, guild_id: int) -> int:
+        """清除本服所有用户书单帖链接绑定，返回清除条数。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM user_booklist_thread_links
+            WHERE guild_id = ?
+        ''', (guild_id,))
+        affected = cursor.rowcount if cursor.rowcount is not None else 0
+        conn.commit()
+        conn.close()
+        return affected
