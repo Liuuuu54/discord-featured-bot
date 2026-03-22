@@ -326,6 +326,30 @@ class FeaturedMessageBot(commands.Bot):
                 self.db.deactivate_public_booklist_index(message_id)
             except Exception as e:
                 logger.debug(f"清理公开书单索引失败(批量): {e}")
+
+    async def on_message(self, message: discord.Message):
+        """书单帖发言限制：仅绑定者本人可发言，其他人只能反应。"""
+        if message.author.bot:
+            return
+
+        if message.guild and isinstance(message.channel, discord.Thread):
+            bound_owner_id = self.db.get_booklist_thread_owner(message.guild.id, message.channel.id)
+            if bound_owner_id and message.author.id != bound_owner_id:
+                try:
+                    await message.delete()
+                    logger.info(
+                        f"🧹 已删除书单帖非楼主留言 | 用户: {message.author.name}({message.author.id}) | "
+                        f"帖子: {message.channel.id} | 群组: {message.guild.id}"
+                    )
+                except discord.Forbidden:
+                    logger.warning(
+                        f"⚠️ 无权限删除书单帖留言 | 用户: {message.author.id} | 帖子: {message.channel.id} | 群组: {message.guild.id}"
+                    )
+                except Exception as e:
+                    logger.warning(f"删除书单帖留言失败: {e}")
+                return
+
+        await self.process_commands(message)
     
     async def on_command_error(self, ctx, error):
         """处理命令错误"""

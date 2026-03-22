@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import re
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -803,6 +804,30 @@ class DatabaseManager:
         row = cursor.fetchone()
         conn.close()
         return row[0] if row else None
+
+    def get_booklist_thread_owner(self, guild_id: int, thread_id: int) -> Optional[int]:
+        """根据群组+帖子ID查找书单帖绑定人（楼主）。没有则返回 None。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT user_id, thread_url
+            FROM user_booklist_thread_links
+            WHERE guild_id = ?
+        ''', (guild_id,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        for user_id, thread_url in rows:
+            if not thread_url:
+                continue
+            match = re.match(r"^https://discord\.com/channels/(\d+)/(\d+)(?:/\d+)?$", thread_url.strip())
+            if not match:
+                continue
+            parsed_guild = int(match.group(1))
+            parsed_thread = int(match.group(2))
+            if parsed_guild == guild_id and parsed_thread == thread_id:
+                return user_id
+        return None
 
     def add_public_booklist_index(self, message_id: int, publisher_user_id: int, list_id: int,
                                   guild_id: int, channel_id: int):
