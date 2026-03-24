@@ -31,6 +31,32 @@ def _truncate(text: str, max_len: int) -> str:
     return text[: max_len - 1] + "…"
 
 
+def _split_blocks_into_fields(blocks: list[str], max_field_len: int = 1000) -> list[str]:
+    if not blocks:
+        return []
+
+    fields: list[str] = []
+    current = ""
+    separator = "\n\n"
+
+    for block in blocks:
+        if len(block) > max_field_len:
+            block = _truncate(block, max_field_len)
+
+        candidate = f"{current}{separator}{block}" if current else block
+        if len(candidate) <= max_field_len:
+            current = candidate
+            continue
+
+        if current:
+            fields.append(current)
+        current = block
+
+    if current:
+        fields.append(current)
+    return fields
+
+
 def _is_valid_discord_url(url: str) -> bool:
     pattern = r"^https://discord\.com/channels/\d+/\d+(?:/\d+)?$"
     return re.match(pattern, url.strip()) is not None
@@ -427,7 +453,10 @@ class ManageBooklistView(discord.ui.View):
                     f"🔗 连结：{entry['thread_url']}\n"
                     f"📝 评价：{review}"
                 )
-            embed.add_field(name="帖子列表", value="\n".join(lines), inline=False)
+            field_values = _split_blocks_into_fields(lines)
+            for idx, field_value in enumerate(field_values):
+                field_name = "帖子列表" if idx == 0 else f"帖子列表（续 {idx}）"
+                embed.add_field(name=field_name, value=field_value, inline=False)
         else:
             embed.add_field(name="帖子列表", value="暂无帖子。", inline=False)
 
@@ -441,13 +470,31 @@ class ManageBooklistView(discord.ui.View):
 
     @discord.ui.button(label="上一张", style=discord.ButtonStyle.secondary, emoji="◀️")
     async def prev_list(self, interaction: discord.Interaction, button: discord.ui.Button):
+        old_list_id = self.current_list_id
         self.current_list_id = (self.current_list_id - 1) % MAX_BOOKLISTS
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        try:
+            await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        except Exception:
+            self.current_list_id = old_list_id
+            logger.exception("切换到上一张书单失败，已回滚索引")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ 切换失败，已回滚到原书单。", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ 切换失败，已回滚到原书单。", ephemeral=True)
 
     @discord.ui.button(label="下一张", style=discord.ButtonStyle.secondary, emoji="▶️")
     async def next_list(self, interaction: discord.Interaction, button: discord.ui.Button):
+        old_list_id = self.current_list_id
         self.current_list_id = (self.current_list_id + 1) % MAX_BOOKLISTS
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        try:
+            await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        except Exception:
+            self.current_list_id = old_list_id
+            logger.exception("切换到下一张书单失败，已回滚索引")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ 切换失败，已回滚到原书单。", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ 切换失败，已回滚到原书单。", ephemeral=True)
 
     @discord.ui.button(label="改标题", style=discord.ButtonStyle.primary, emoji="✏️")
     async def rename_list(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -588,28 +635,58 @@ class PublicBooklistModal(discord.ui.Modal, title="公开书单"):
             await interaction.response.send_message("❌ 该书单至少要有 5 帖才能公开。", ephemeral=True)
             return
 
-        view = PublicBooklistPagerView(
-            self.cog,
-            publisher_user_id=interaction.user.id,
-            list_id=list_id,
-            intro=intro,
-            current_page=1
-        )
-        embed, total_pages = view._build_embed_and_pages()
-        view._update_buttons(total_pages)
-
         await interaction.response.defer(ephemeral=True, thinking=True)
-        message = await interaction.channel.send(embed=embed, view=view)
-        self.cog.db.add_public_booklist_index(
-            message_id=message.id,
-            publisher_user_id=interaction.user.id,
-            list_id=list_id,
-            guild_id=interaction.guild_id,
-            channel_id=interaction.channel_id
-        )
+        entries = data['entries']
+        total_entries = len(entries)
+        total_chunks = max(1, (total_entries + PUBLIC_BOOKLIST_PAGE_SIZE - 1) // PUBLIC_BOOKLIST_PAGE_SIZE)
+
+        published_messages: list[discord.Message] = []
+        for chunk_idx in range(total_chunks):
+            start = chunk_idx * PUBLIC_BOOKLIST_PAGE_SIZE
+            end = start + PUBLIC_BOOKLIST_PAGE_SIZE
+            chunk_entries = entries[start:end]
+
+            embed = discord.Embed(
+                title=f"📖 公开书单：{data['title']}（ID {list_id}）",
+                description=(
+                    f"发布者：<@{interaction.user.id}>\n\n{intro}"
+                    if chunk_idx == 0
+                    else f"发布者：<@{interaction.user.id}>"
+                ),
+                color=discord.Color.gold(),
+                timestamp=discord.utils.utcnow(),
+            )
+
+            lines = []
+            for row_idx, entry in enumerate(chunk_entries, start + 1):
+                title = _truncate(entry['thread_title'], 60)
+                review = entry['review'].strip() if entry['review'] else ""
+                review_text = _truncate(review, 50) if review else "（无评价）"
+                lines.append(
+                    f"🆔 ID：`{row_idx:02}`\n"
+                    f"📌 标题：{title}\n"
+                    f"🔗 连结：{entry['thread_url']}\n"
+                    f"📝 评价：{review_text}"
+                )
+
+            embed.add_field(
+                name=f"帖子列表（第 {chunk_idx + 1}/{total_chunks} 组，共 {total_entries} 帖）",
+                value="\n\n".join(lines) if lines else "该书单当前没有帖子（可能已被清空）。",
+                inline=False,
+            )
+
+            message = await interaction.channel.send(embed=embed)
+            published_messages.append(message)
+            self.cog.db.add_public_booklist_index(
+                message_id=message.id,
+                publisher_user_id=interaction.user.id,
+                list_id=list_id,
+                guild_id=interaction.guild_id,
+                channel_id=interaction.channel_id
+            )
 
         await interaction.followup.send(
-            f"✅ 书单已公开：{message.jump_url}\n支持全员翻页；重启后仍可继续翻页。",
+            f"✅ 书单已公开，共发送 {len(published_messages)} 则。\n首则连结：{published_messages[0].jump_url}",
             ephemeral=True,
         )
 
@@ -721,7 +798,7 @@ class BooklistCommands(commands.Cog):
         self.db = bot.db
 
     async def cog_load(self):
-        """重启后恢复公开书单分页按钮；不存在的消息自动失效。"""
+        """重启后校验公开书单索引；旧版带翻页按钮的消息继续恢复交互。"""
         indexes = self.db.get_active_public_booklist_indexes()
         for item in indexes:
             message_id = item['message_id']
@@ -738,20 +815,21 @@ class BooklistCommands(commands.Cog):
                     continue
 
             try:
-                await channel.fetch_message(message_id)
+                message = await channel.fetch_message(message_id)
             except Exception:
                 self.db.deactivate_public_booklist_index(message_id)
                 continue
 
-            # intro 不存快照，重启恢复时用简短占位文本
-            view = PublicBooklistPagerView(
-                self,
-                publisher_user_id=publisher_user_id,
-                list_id=list_id,
-                intro="（书单介绍未保存快照，内容以当前书单为准）",
-                current_page=1
-            )
-            self.bot.add_view(view, message_id=message_id)
+            # 仅为旧版翻页消息恢复按钮；新版为静态多消息，不需要 View
+            if message.components:
+                view = PublicBooklistPagerView(
+                    self,
+                    publisher_user_id=publisher_user_id,
+                    list_id=list_id,
+                    intro="（书单介绍未保存快照，内容以当前书单为准）",
+                    current_page=1
+                )
+                self.bot.add_view(view, message_id=message_id)
 
     @app_commands.command(name="添加至书单", description="将当前帖子添加到你的书单（仅自己可见）")
     async def add_to_booklist(self, interaction: discord.Interaction):
