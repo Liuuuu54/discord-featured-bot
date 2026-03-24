@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 MAX_BOOKLISTS = 10
 MAX_POSTS_PER_LIST = 20
 PUBLIC_BOOKLIST_PAGE_SIZE = 5
+MANAGE_BOOKLIST_PAGE_SIZE = 5
 
 
 def _is_thread_channel(channel: discord.abc.GuildChannel) -> bool:
@@ -408,11 +409,14 @@ class ManageBooklistView(discord.ui.View):
         self.user_id = user_id
         self.guild_id = guild_id
         self.current_list_id = current_list_id
+        self.current_entry_page = 1
 
-        # 功能性重排：上一张 下一张 添加帖子 删帖子 搬帖子 改标题 改评价 连结书单帖 刷新
+        # 功能性重排：书单切换、帖子分页、管理动作
         self.clear_items()
         self.add_item(self.prev_list)
         self.add_item(self.next_list)
+        self.add_item(self.prev_entries_page)
+        self.add_item(self.next_entries_page)
         self.add_item(self.add_post_by_url)
         self.add_item(self.delete_entry)
         self.add_item(self.move_entry)
@@ -430,6 +434,14 @@ class ManageBooklistView(discord.ui.View):
     def build_embed(self, extra_notice: str = "") -> discord.Embed:
         data = self.cog.db.get_user_booklist(self.user_id, self.current_list_id)
         overview = self.cog.db.get_user_booklists_overview(self.user_id)
+        total_entries = len(data['entries'])
+        total_pages = max(1, (total_entries + MANAGE_BOOKLIST_PAGE_SIZE - 1) // MANAGE_BOOKLIST_PAGE_SIZE)
+        self.current_entry_page = max(1, min(self.current_entry_page, total_pages))
+        start_idx = (self.current_entry_page - 1) * MANAGE_BOOKLIST_PAGE_SIZE
+        end_idx = start_idx + MANAGE_BOOKLIST_PAGE_SIZE
+        page_entries = data['entries'][start_idx:end_idx]
+        self.prev_entries_page.disabled = self.current_entry_page <= 1
+        self.next_entries_page.disabled = self.current_entry_page >= total_pages
 
         embed = discord.Embed(
             title=f"📚 书单管理 | ID {self.current_list_id}",
@@ -441,9 +453,10 @@ class ManageBooklistView(discord.ui.View):
         if extra_notice:
             embed.add_field(name="操作结果", value=extra_notice, inline=False)
 
-        if data['entries']:
+        if page_entries:
             lines = []
-            for idx, entry in enumerate(data['entries'], 1):
+            for offset, entry in enumerate(page_entries, 1):
+                idx = start_idx + offset
                 title = _truncate(entry['thread_title'], 40)
                 review = entry['review'].strip() if entry['review'] else "（无评价）"
                 review = _truncate(review, 50)
@@ -465,62 +478,84 @@ class ManageBooklistView(discord.ui.View):
         embed.add_field(name="书单帖连结", value=profile_text, inline=False)
 
         overview_text = " | ".join([f"{x['list_id']}:{x['post_count']}" for x in overview])
-        embed.set_footer(text=f"10 张书单概览（ID:数量） {overview_text}")
+        embed.set_footer(
+            text=(
+                f"书单页码 {self.current_entry_page}/{total_pages}（每页 {MANAGE_BOOKLIST_PAGE_SIZE} 帖）"
+                f" | 10 张书单概览（ID:数量） {overview_text}"
+            )
+        )
         return embed
 
-    @discord.ui.button(label="上一张", style=discord.ButtonStyle.secondary, emoji="◀️")
+    @discord.ui.button(label="上一张", style=discord.ButtonStyle.secondary, emoji="📚", row=0)
     async def prev_list(self, interaction: discord.Interaction, button: discord.ui.Button):
         old_list_id = self.current_list_id
+        old_entry_page = self.current_entry_page
         self.current_list_id = (self.current_list_id - 1) % MAX_BOOKLISTS
+        self.current_entry_page = 1
         try:
             await interaction.response.edit_message(embed=self.build_embed(), view=self)
         except Exception:
             self.current_list_id = old_list_id
+            self.current_entry_page = old_entry_page
             logger.exception("切换到上一张书单失败，已回滚索引")
             if not interaction.response.is_done():
                 await interaction.response.send_message("❌ 切换失败，已回滚到原书单。", ephemeral=True)
             else:
                 await interaction.followup.send("❌ 切换失败，已回滚到原书单。", ephemeral=True)
 
-    @discord.ui.button(label="下一张", style=discord.ButtonStyle.secondary, emoji="▶️")
+    @discord.ui.button(label="下一张", style=discord.ButtonStyle.secondary, emoji="📚", row=0)
     async def next_list(self, interaction: discord.Interaction, button: discord.ui.Button):
         old_list_id = self.current_list_id
+        old_entry_page = self.current_entry_page
         self.current_list_id = (self.current_list_id + 1) % MAX_BOOKLISTS
+        self.current_entry_page = 1
         try:
             await interaction.response.edit_message(embed=self.build_embed(), view=self)
         except Exception:
             self.current_list_id = old_list_id
+            self.current_entry_page = old_entry_page
             logger.exception("切换到下一张书单失败，已回滚索引")
             if not interaction.response.is_done():
                 await interaction.response.send_message("❌ 切换失败，已回滚到原书单。", ephemeral=True)
             else:
                 await interaction.followup.send("❌ 切换失败，已回滚到原书单。", ephemeral=True)
 
-    @discord.ui.button(label="改标题", style=discord.ButtonStyle.primary, emoji="✏️")
+    @discord.ui.button(label="上一页", style=discord.ButtonStyle.primary, emoji="📄", row=1)
+    async def prev_entries_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_entry_page > 1:
+            self.current_entry_page -= 1
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label="下一页", style=discord.ButtonStyle.primary, emoji="📄", row=1)
+    async def next_entries_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_entry_page += 1
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label="改标题", style=discord.ButtonStyle.primary, emoji="✏️", row=2)
     async def rename_list(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RenameBooklistModal(self))
 
-    @discord.ui.button(label="删帖子", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="删帖子", style=discord.ButtonStyle.danger, emoji="🗑️", row=2)
     async def delete_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(DeleteEntryModal(self))
 
-    @discord.ui.button(label="搬帖子", style=discord.ButtonStyle.success, emoji="📦")
+    @discord.ui.button(label="搬帖子", style=discord.ButtonStyle.success, emoji="📦", row=2)
     async def move_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(MoveEntryModal(self))
 
-    @discord.ui.button(label="改评价", style=discord.ButtonStyle.success, emoji="📝")
+    @discord.ui.button(label="改评价", style=discord.ButtonStyle.success, emoji="📝", row=3)
     async def edit_review(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(EditReviewModal(self))
 
-    @discord.ui.button(label="刷新", style=discord.ButtonStyle.secondary, emoji="🔄")
+    @discord.ui.button(label="刷新", style=discord.ButtonStyle.secondary, emoji="🔄", row=3)
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
-    @discord.ui.button(label="连结书单帖", style=discord.ButtonStyle.primary, emoji="🔗")
+    @discord.ui.button(label="连结书单帖", style=discord.ButtonStyle.primary, emoji="🔗", row=4)
     async def link_booklist_thread(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(LinkBooklistThreadModal(self))
 
-    @discord.ui.button(label="加帖子", style=discord.ButtonStyle.success, emoji="➕")
+    @discord.ui.button(label="加帖子", style=discord.ButtonStyle.success, emoji="➕", row=4)
     async def add_post_by_url(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AddPostByUrlModal(self))
 
@@ -732,8 +767,10 @@ class GuildBooklistAdminView(discord.ui.View):
         if rows:
             lines = []
             for idx, row in enumerate(rows, 1):
+                thread_url = self.cog.db.get_user_booklist_thread_url(row['user_id'], self.guild_id)
+                thread_text = f"[点击跳转]({thread_url})" if thread_url else "未绑定"
                 lines.append(
-                    f"`{idx:02}` 👤 <@{row['user_id']}> | 📚 非空书单: {row['active_list_count']} | 🧩 总帖子: {row['total_posts']}"
+                    f"`{idx:02}` 👤 <@{row['user_id']}> | 📚 非空书单: {row['active_list_count']} | 🔗 书单连结帖: {thread_text}"
                 )
             embed.add_field(name="用户概览", value="\n".join(lines), inline=False)
         else:
