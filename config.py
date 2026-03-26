@@ -43,6 +43,7 @@ ADMIN_ROLE_NAMES = [
 APPRECIATOR_ROLE_NAME = '鉴赏家'  # 鉴赏家角色名称
 APPRECIATOR_MIN_FEATURED = 1  # 最低被引荐人数要求
 APPRECIATOR_MIN_REFERRALS = 3  # 最低引荐人数要求
+APPRECIATOR_CROSS_GUILD_STATS = True  # 申请鉴赏家时是否跨服统计精选/引荐
 
 # ==================== 界面配置 ====================
 # 视图超时时间（秒）

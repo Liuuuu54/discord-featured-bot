@@ -110,6 +110,7 @@ ADMIN_ROLE_NAMES = [               # 管理组角色名称列表
 APPRECIATOR_ROLE_NAME = '鉴赏家'    # 鉴赏家角色名称
 APPRECIATOR_MIN_FEATURED = 1       # 最低被引荐人数要求
 APPRECIATOR_MIN_REFERRALS = 3      # 最低引荐人数要求
+APPRECIATOR_CROSS_GUILD_STATS = True  # 申请鉴赏家时是否跨服统计
 ```
 
 **注意**：这些配置项直接在 `config.py` 中设置，不支持环境变量覆盖。

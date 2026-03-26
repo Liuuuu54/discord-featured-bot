@@ -1295,7 +1295,11 @@ class AppreciatorApplicationView(discord.ui.View):
         
         try:
             # 获取用户统计信息
-            stats = self.bot.db.get_user_stats(interaction.user.id, interaction.guild_id)
+            stats = self.bot.db.get_user_stats(
+                interaction.user.id,
+                interaction.guild_id,
+                include_all_guilds=config.APPRECIATOR_CROSS_GUILD_STATS
+            )
             
             # 检查被引荐人数或引荐人数要求（满足其中一个即可）
             featured_ok = stats['featured_count'] >= config.APPRECIATOR_MIN_FEATURED
@@ -1303,12 +1307,14 @@ class AppreciatorApplicationView(discord.ui.View):
             booklist_link = self.bot.db.get_user_booklist_thread_url(interaction.user.id, interaction.guild_id)
             booklist_ok = bool(booklist_link)
             
+            stats_scope_label = "全服累计" if config.APPRECIATOR_CROSS_GUILD_STATS else "本服累计"
+
             if not featured_ok and not referrals_ok and not booklist_ok:
                 await interaction.followup.send(
                     f"❌ 申请条件不满足！\n"
                     f"需要满足以下条件之一：\n"
-                    f"• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次（您当前被引荐了 {stats['featured_count']} 次）\n"
-                    f"• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人（您当前引荐了 {stats['featuring_count']} 人）\n"
+                    f"• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次（{stats_scope_label}：{stats['featured_count']} 次）\n"
+                    f"• 引荐人数至少 {config.APPRECIATOR_MIN_REFERRALS} 人（{stats_scope_label}：{stats['featuring_count']} 人）\n"
                     f"• 绑定书单帖链接（您当前：{'已绑定' if booklist_ok else '未绑定'}）",
                     ephemeral=True
                 )
@@ -1404,15 +1410,15 @@ class AppreciatorApplicationView(discord.ui.View):
                 )
                 embed.add_field(
                     name="📊 您的成就",
-                    value=f"**引荐人数**: {stats['featuring_count']} 人",
+                    value=f"**引荐人数**（{stats_scope_label}）: {stats['featuring_count']} 人",
                     inline=False
                 )
                 # 显示用户满足的条件
                 conditions_met = []
                 if stats['featured_count'] >= config.APPRECIATOR_MIN_FEATURED:
-                    conditions_met.append(f"✅ 被引荐 {stats['featured_count']} 次（满足 {config.APPRECIATOR_MIN_FEATURED} 次要求）")
+                    conditions_met.append(f"✅ 被引荐 {stats['featured_count']} 次（{stats_scope_label}，满足 {config.APPRECIATOR_MIN_FEATURED} 次要求）")
                 if stats['featuring_count'] >= config.APPRECIATOR_MIN_REFERRALS:
-                    conditions_met.append(f"✅ 引荐 {stats['featuring_count']} 人（满足 {config.APPRECIATOR_MIN_REFERRALS} 人要求）")
+                    conditions_met.append(f"✅ 引荐 {stats['featuring_count']} 人（{stats_scope_label}，满足 {config.APPRECIATOR_MIN_REFERRALS} 人要求）")
                 if booklist_ok:
                     conditions_met.append("✅ 已绑定书单帖链接")
                 

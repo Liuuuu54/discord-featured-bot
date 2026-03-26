@@ -222,33 +222,52 @@ class DatabaseManager:
             conn.close()
             return False
     
-    def get_user_stats(self, user_id: int, guild_id: int) -> Dict:
-        """获取用户在指定群组的统计信息"""
+    def get_user_stats(self, user_id: int, guild_id: int, include_all_guilds: bool = False) -> Dict:
+        """获取用户统计信息（默认指定群组，可选跨群组汇总）"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
-        
-        # 获取用户名（从featured_messages表）
-        # 先找作为被引荐人的名字
-        cursor.execute('SELECT author_name FROM featured_messages WHERE author_id = ? AND guild_id = ? LIMIT 1', (user_id, guild_id))
-        name_result = cursor.fetchone()
-        if not name_result:
-            # 否则找作为引荐人的名字
-            cursor.execute('SELECT featured_by_name FROM featured_messages WHERE featured_by_id = ? AND guild_id = ? LIMIT 1', (user_id, guild_id))
+
+        if include_all_guilds:
+            # 获取用户名（跨群组）
+            cursor.execute('SELECT author_name FROM featured_messages WHERE author_id = ? LIMIT 1', (user_id,))
             name_result = cursor.fetchone()
+            if not name_result:
+                cursor.execute('SELECT featured_by_name FROM featured_messages WHERE featured_by_id = ? LIMIT 1', (user_id,))
+                name_result = cursor.fetchone()
+        else:
+            # 获取用户名（仅当前群组）
+            cursor.execute('SELECT author_name FROM featured_messages WHERE author_id = ? AND guild_id = ? LIMIT 1', (user_id, guild_id))
+            name_result = cursor.fetchone()
+            if not name_result:
+                cursor.execute('SELECT featured_by_name FROM featured_messages WHERE featured_by_id = ? AND guild_id = ? LIMIT 1', (user_id, guild_id))
+                name_result = cursor.fetchone()
         
         username = name_result[0] if name_result else f"用户{user_id}"
-        
-        # 获取被精選次数 (仅限当前群组)
-        cursor.execute('''
-            SELECT COUNT(*) FROM featured_messages WHERE author_id = ? AND guild_id = ?
-        ''', (user_id, guild_id))
-        featured_count = cursor.fetchone()[0]
-        
-        # 获取引荐人数 (仅限当前群组，去重统计)
-        cursor.execute('''
-            SELECT COUNT(DISTINCT author_id) FROM featured_messages WHERE featured_by_id = ? AND guild_id = ?
-        ''', (user_id, guild_id))
-        featuring_count = cursor.fetchone()[0]
+
+        if include_all_guilds:
+            # 获取被精選次数（跨群组）
+            cursor.execute('''
+                SELECT COUNT(*) FROM featured_messages WHERE author_id = ?
+            ''', (user_id,))
+            featured_count = cursor.fetchone()[0]
+
+            # 获取引荐人数（跨群组去重统计，按用户ID去重）
+            cursor.execute('''
+                SELECT COUNT(DISTINCT author_id) FROM featured_messages WHERE featured_by_id = ?
+            ''', (user_id,))
+            featuring_count = cursor.fetchone()[0]
+        else:
+            # 获取被精選次数（仅当前群组）
+            cursor.execute('''
+                SELECT COUNT(*) FROM featured_messages WHERE author_id = ? AND guild_id = ?
+            ''', (user_id, guild_id))
+            featured_count = cursor.fetchone()[0]
+
+            # 获取引荐人数（仅当前群组，去重统计）
+            cursor.execute('''
+                SELECT COUNT(DISTINCT author_id) FROM featured_messages WHERE featured_by_id = ? AND guild_id = ?
+            ''', (user_id, guild_id))
+            featuring_count = cursor.fetchone()[0]
         
         conn.close()
         

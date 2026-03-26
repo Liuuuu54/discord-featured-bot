@@ -54,7 +54,8 @@ DISCORD_TOKEN=your_actual_bot_token_here
 
 - **界面设置**: 调整 `VIEW_TIMEOUT`、`USER_RECORDS_PER_PAGE` 等界面参数
 - **管理组角色**: 修改 `ADMIN_ROLE_NAMES` 添加管理组角色
-- **鉴赏家要求**: 调整 `APPRECIATOR_MIN_REFERRALS`
+- **鉴赏家要求**: 调整 `APPRECIATOR_MIN_FEATURED`、`APPRECIATOR_MIN_REFERRALS`
+- **鉴赏家统计范围**: 调整 `APPRECIATOR_CROSS_GUILD_STATS`（`True` 为跨服累计，`False` 为本服累计）
 
 詳細配置說明請參考 [CONFIG_GUIDE.md](CONFIG_GUIDE.md)
 
