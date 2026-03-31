@@ -58,6 +58,20 @@ def _split_blocks_into_fields(blocks: list[str], max_field_len: int = 1000) -> l
     return fields
 
 
+def _build_book_entry_block(entry: dict, index: int, *, title_max_len: int = 60, review_max_len: Optional[int] = None) -> str:
+    title = _truncate(entry['thread_title'], title_max_len)
+    review = entry['review'].strip() if entry['review'] else ""
+    if review and review_max_len is not None:
+        review = _truncate(review, review_max_len)
+    review_text = review if review else "（无评价）"
+    return (
+        f"🆔 ID：`{index:02}`\n"
+        f"📌 标题：{title}\n"
+        f"🔗 连结：{entry['thread_url']}\n"
+        f"📝 评价：{review_text}"
+    )
+
+
 def _is_valid_discord_url(url: str) -> bool:
     pattern = r"^https://discord\.com/channels/\d+/\d+(?:/\d+)?$"
     return re.match(pattern, url.strip()) is not None
@@ -457,15 +471,7 @@ class ManageBooklistView(discord.ui.View):
             lines = []
             for offset, entry in enumerate(page_entries, 1):
                 idx = start_idx + offset
-                title = _truncate(entry['thread_title'], 40)
-                review = entry['review'].strip() if entry['review'] else "（无评价）"
-                review = _truncate(review, 50)
-                lines.append(
-                    f"🆔 ID：`{idx:02}`\n"
-                    f"📌 标题：{title}\n"
-                    f"🔗 连结：{entry['thread_url']}\n"
-                    f"📝 评价：{review}"
-                )
+                lines.append(_build_book_entry_block(entry, idx, title_max_len=40, review_max_len=50))
             field_values = _split_blocks_into_fields(lines)
             for idx, field_value in enumerate(field_values):
                 field_name = "帖子列表" if idx == 0 else f"帖子列表（续 {idx}）"
@@ -588,22 +594,15 @@ class PublicBooklistPagerView(discord.ui.View):
         )
 
         if page_entries:
-            lines = []
-            for idx, entry in enumerate(page_entries, start + 1):
-                title = _truncate(entry['thread_title'], 60)
-                review = entry['review'].strip() if entry['review'] else ""
-                review_text = _truncate(review, 50) if review else "（无评价）"
-                lines.append(
-                    f"🆔 ID：`{idx:02}`\n"
-                    f"📌 标题：{title}\n"
-                    f"🔗 连结：{entry['thread_url']}\n"
-                    f"📝 评价：{review_text}"
+            lines = [_build_book_entry_block(entry, idx) for idx, entry in enumerate(page_entries, start + 1)]
+            field_values = _split_blocks_into_fields(lines)
+            for field_idx, field_value in enumerate(field_values):
+                field_name = (
+                    f"帖子列表（第 {self.current_page}/{total_pages} 页，共 {total_entries} 帖）"
+                    if field_idx == 0
+                    else f"帖子列表（续 {field_idx}）"
                 )
-            embed.add_field(
-                name=f"帖子列表（第 {self.current_page}/{total_pages} 页，共 {total_entries} 帖）",
-                value="\n".join(lines),
-                inline=False,
-            )
+                embed.add_field(name=field_name, value=field_value, inline=False)
         else:
             embed.add_field(
                 name="帖子列表",
@@ -692,23 +691,23 @@ class PublicBooklistModal(discord.ui.Modal, title="公开书单"):
                 timestamp=discord.utils.utcnow(),
             )
 
-            lines = []
-            for row_idx, entry in enumerate(chunk_entries, start + 1):
-                title = _truncate(entry['thread_title'], 60)
-                review = entry['review'].strip() if entry['review'] else ""
-                review_text = _truncate(review, 50) if review else "（无评价）"
-                lines.append(
-                    f"🆔 ID：`{row_idx:02}`\n"
-                    f"📌 标题：{title}\n"
-                    f"🔗 连结：{entry['thread_url']}\n"
-                    f"📝 评价：{review_text}"
-                )
+            lines = [_build_book_entry_block(entry, row_idx) for row_idx, entry in enumerate(chunk_entries, start + 1)]
+            field_values = _split_blocks_into_fields(lines)
 
-            embed.add_field(
-                name=f"帖子列表（第 {chunk_idx + 1}/{total_chunks} 组，共 {total_entries} 帖）",
-                value="\n\n".join(lines) if lines else "该书单当前没有帖子（可能已被清空）。",
-                inline=False,
-            )
+            if field_values:
+                for field_idx, field_value in enumerate(field_values):
+                    field_name = (
+                        f"帖子列表（第 {chunk_idx + 1}/{total_chunks} 组，共 {total_entries} 帖）"
+                        if field_idx == 0
+                        else f"帖子列表（续 {field_idx}）"
+                    )
+                    embed.add_field(name=field_name, value=field_value, inline=False)
+            else:
+                embed.add_field(
+                    name="帖子列表",
+                    value="该书单当前没有帖子（可能已被清空）。",
+                    inline=False,
+                )
 
             message = await interaction.channel.send(embed=embed)
             published_messages.append(message)

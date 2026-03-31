@@ -820,16 +820,31 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
-    def get_user_booklist_thread_url(self, user_id: int, guild_id: int) -> Optional[str]:
-        """获取用户在指定群组绑定的书单帖链接。"""
+    def get_user_booklist_thread_url(self, user_id: int, guild_id: Optional[int] = None,
+                                     fallback_any_guild: bool = True) -> Optional[str]:
+        """获取用户书单帖链接；优先当前群组，必要时可回退到该用户任一已绑定链接。"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT thread_url
-            FROM user_booklist_thread_links
-            WHERE user_id = ? AND guild_id = ?
-        ''', (user_id, guild_id))
-        row = cursor.fetchone()
+
+        row = None
+        if guild_id is not None:
+            cursor.execute('''
+                SELECT thread_url
+                FROM user_booklist_thread_links
+                WHERE user_id = ? AND guild_id = ?
+            ''', (user_id, guild_id))
+            row = cursor.fetchone()
+
+        if not row and fallback_any_guild:
+            cursor.execute('''
+                SELECT thread_url
+                FROM user_booklist_thread_links
+                WHERE user_id = ?
+                ORDER BY updated_at DESC, guild_id ASC
+                LIMIT 1
+            ''', (user_id,))
+            row = cursor.fetchone()
+
         conn.close()
         return row[0] if row else None
 
