@@ -594,15 +594,17 @@ class PublicBooklistPagerView(discord.ui.View):
         )
 
         if page_entries:
-            lines = [_build_book_entry_block(entry, idx) for idx, entry in enumerate(page_entries, start + 1)]
-            field_values = _split_blocks_into_fields(lines)
-            for field_idx, field_value in enumerate(field_values):
-                field_name = (
-                    f"帖子列表（第 {self.current_page}/{total_pages} 页，共 {total_entries} 帖）"
-                    if field_idx == 0
-                    else f"帖子列表（续 {field_idx}）"
+            embed.add_field(
+                name=f"帖子列表（第 {self.current_page}/{total_pages} 页，共 {total_entries} 帖）",
+                value="以下为本页书目：",
+                inline=False,
+            )
+            for idx, entry in enumerate(page_entries, start + 1):
+                embed.add_field(
+                    name=f"ID {idx:02}",
+                    value=_build_book_entry_block(entry, idx),
+                    inline=False,
                 )
-                embed.add_field(name=field_name, value=field_value, inline=False)
         else:
             embed.add_field(
                 name="帖子列表",
@@ -691,17 +693,18 @@ class PublicBooklistModal(discord.ui.Modal, title="公开书单"):
                 timestamp=discord.utils.utcnow(),
             )
 
-            lines = [_build_book_entry_block(entry, row_idx) for row_idx, entry in enumerate(chunk_entries, start + 1)]
-            field_values = _split_blocks_into_fields(lines)
-
-            if field_values:
-                for field_idx, field_value in enumerate(field_values):
-                    field_name = (
-                        f"帖子列表（第 {chunk_idx + 1}/{total_chunks} 组，共 {total_entries} 帖）"
-                        if field_idx == 0
-                        else f"帖子列表（续 {field_idx}）"
+            if chunk_entries:
+                embed.add_field(
+                    name=f"帖子列表（第 {chunk_idx + 1}/{total_chunks} 组，共 {total_entries} 帖）",
+                    value="以下为本组书目：",
+                    inline=False,
+                )
+                for row_idx, entry in enumerate(chunk_entries, start + 1):
+                    embed.add_field(
+                        name=f"ID {row_idx:02}",
+                        value=_build_book_entry_block(entry, row_idx),
+                        inline=False,
                     )
-                    embed.add_field(name=field_name, value=field_value, inline=False)
             else:
                 embed.add_field(
                     name="帖子列表",
