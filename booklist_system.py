@@ -468,14 +468,18 @@ class ManageBooklistView(discord.ui.View):
             embed.add_field(name="操作结果", value=extra_notice, inline=False)
 
         if page_entries:
-            lines = []
+            embed.add_field(
+                name="帖子列表",
+                value=f"以下为当前页书目（第 {self.current_entry_page}/{total_pages} 页）：",
+                inline=False,
+            )
             for offset, entry in enumerate(page_entries, 1):
                 idx = start_idx + offset
-                lines.append(_build_book_entry_block(entry, idx, title_max_len=40, review_max_len=50))
-            field_values = _split_blocks_into_fields(lines)
-            for idx, field_value in enumerate(field_values):
-                field_name = "帖子列表" if idx == 0 else f"帖子列表（续 {idx}）"
-                embed.add_field(name=field_name, value=field_value, inline=False)
+                embed.add_field(
+                    name=f"ID {idx:02}",
+                    value=_build_book_entry_block(entry, idx, title_max_len=40),
+                    inline=False,
+                )
         else:
             embed.add_field(name="帖子列表", value="暂无帖子。", inline=False)
 
