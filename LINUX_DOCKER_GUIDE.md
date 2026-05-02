@@ -152,6 +152,10 @@ git pull
 ./deploy.sh deploy
 ```
 
+> v2.1.0 起项目代码拆分到 `app/`、`app/booklist/`、`app/features/` 等目录，但 Docker 启动入口仍是 `start.sh -> python bot.py`。`bot.py` 和 `booklist_system.py` 都保留兼容入口，因此 VPS 更新和重启流程不变。
+>
+> 如果是从 v2.0.x 升级到 v2.1.0，建议在 `git pull` 前先执行一次 `./backup.sh backup`，再按上面的自动更新流程部署。
+
 ### 手动更新
 
 ```bash

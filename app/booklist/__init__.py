@@ -1,4 +1,4 @@
-"""Compatibility wrapper for the booklist subsystem."""
+"""Booklist subsystem exports."""
 
 from app.booklist.commands import BooklistCommands
 
