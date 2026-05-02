@@ -8,6 +8,7 @@
 - **书单模块拆分**: 书单子系统迁移到 `app/booklist/`，并拆分为 commands、modals、views、formatting、constants；根目录 `booklist_system.py` 保留兼容导出。
 - **测试补强**: 新增 `tests/test_database_manager.py`，覆盖 SQLite 精选、排行、书单、书单帖守门等核心行为。
 - **文档拆分**: README 精简为项目入口，指令说明移至 `command.md`，更新历史移至 `history.md`。
+- **VPS 输出修正**: `deploy.sh`、`backup.sh`、`start.sh` 改为 ASCII/English 输出，并补上容器 UTF-8 环境变量，避免服务器终端乱码。
 
 ## v2.0.2
 

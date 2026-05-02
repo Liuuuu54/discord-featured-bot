@@ -5,21 +5,24 @@ services:
     restart: unless-stopped
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
-      # 其他配置项使用 config.py 中的默认值，无需在此设置
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+      - PYTHONIOENCODING=utf-8
+      # Other settings use defaults from config.py.
     volumes:
-      # 持久化数据目录
+      # Persist data directory.
       - ./data:/app/data
-      # 持久化日志目录
+      # Persist log directory.
       - ./data/logs:/app/data/logs
     networks:
       - bot-network
-    # 日志配置
+    # Docker log settings.
     logging:
       driver: 'json-file'
       options:
         max-size: '10m'
         max-file: '3'
-    # 资源限制
+    # Resource limits.
     deploy:
       resources:
         limits:

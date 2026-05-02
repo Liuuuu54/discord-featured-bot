@@ -106,6 +106,34 @@ DISCORD_TOKEN=your_bot_token_here
 # ADMIN_ROLE_NAMES=管理组,秘书组,BOT维护员,版主,Admin,Moderator
 ```
 
+### VPS 终端乱码
+
+v2.1.0 起，`deploy.sh`、`backup.sh`、`start.sh` 的终端输出改为 ASCII/English，避免 VPS 或 SSH 客户端未配置 UTF-8 时出现中文乱码。
+
+容器内已设置：
+
+```bash
+LANG=C.UTF-8
+LC_ALL=C.UTF-8
+PYTHONIOENCODING=utf-8
+```
+
+如果你希望 VPS shell 本身也正常显示中文，可在服务器上额外设置 UTF-8 locale：
+
+```bash
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+```
+
+若系统支持 `locale-gen`，也可以安装完整 UTF-8 locale：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y locales
+sudo locale-gen en_US.UTF-8
+sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+```
+
 ### 数据持久化
 
 - **数据目录**: `./data/` (挂载到容器内 `/app/data/`)

@@ -1,64 +1,59 @@
 #!/bin/bash
 
-# Discord Bot 启动脚本
-# 支持自动重启和错误处理
+# Discord Bot startup script.
+# ASCII-only output keeps VPS consoles readable even when UTF-8 is not configured.
 
 set -e
 
-echo "🤖 启动 Discord Bot..."
+export LANG="${LANG:-C.UTF-8}"
+export LC_ALL="${LC_ALL:-C.UTF-8}"
+export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
 
-# 检查环境变量
+echo "[INFO] Starting Discord Bot..."
+
 if [ -z "$DISCORD_TOKEN" ]; then
-    echo "❌ 错误: DISCORD_TOKEN 环境变量未设置"
+    echo "[ERROR] DISCORD_TOKEN is not set"
     exit 1
 fi
 
-# 创建必要的目录
 mkdir -p /app/data/logs
 
-# 设置日志文件
 LOG_FILE="/app/data/logs/bot.log"
-ERROR_LOG="/app/data/logs/error.log"
 
-# 函数：启动Bot
 start_bot() {
-    echo "🚀 正在启动 Discord Bot..."
-    echo "📅 启动时间: $(date)"
-    echo "🔧 Python 版本: $(python --version)"
-    echo "📁 工作目录: $(pwd)"
-    echo "💾 数据目录: /app/data"
-    echo "📝 日志文件: $LOG_FILE"
+    echo "[INFO] Starting bot process..."
+    echo "[INFO] Start time: $(date)"
+    echo "[INFO] Python version: $(python --version)"
+    echo "[INFO] Working directory: $(pwd)"
+    echo "[INFO] Data directory: /app/data"
+    echo "[INFO] Log file: $LOG_FILE"
     echo "=================================="
-    
-    # 启动Bot（日志已配置在bot.py中）
-    echo "🔍 检查Python文件..."
-    python -c "import bot; print('✅ bot.py 导入成功')"
-    echo "🚀 启动主程序..."
+
+    echo "[INFO] Checking Python imports..."
+    python -c "import bot; print('[OK] bot.py import succeeded')"
+    echo "[INFO] Launching main program..."
     python bot.py
 }
 
-# 函数：处理信号
 cleanup() {
-    echo "🛑 收到停止信号，正在关闭Bot..."
+    echo "[INFO] Stop signal received, shutting down bot..."
     exit 0
 }
 
-# 设置信号处理
 trap cleanup SIGTERM SIGINT
 
-# 主循环
 while true; do
-    echo "🔄 启动Bot进程..."
-    
-    # 启动Bot
+    echo "[INFO] Launching bot..."
+
     if start_bot; then
-        echo "✅ Bot正常退出"
+        echo "[OK] Bot exited normally"
         break
     else
-        echo "❌ Bot异常退出，退出码: $?"
-        echo "🔄 5秒后重新启动..."
+        exit_code=$?
+        echo "[ERROR] Bot crashed with exit code: $exit_code"
+        echo "[INFO] Restarting in 5 seconds..."
         sleep 5
     fi
 done
 
-echo "👋 Bot已完全停止" 
+echo "[INFO] Bot stopped"

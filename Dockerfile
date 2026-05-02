@@ -1,30 +1,33 @@
-# 使用Python 3.11官方镜像作为基础镜像
+# Use the official Python 3.11 image as base.
 FROM python:3.11-slim
 
-# 设置工作目录
+# Set working directory.
 WORKDIR /app
 
-# 设置环境变量
+# Runtime environment.
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PYTHONIOENCODING=utf-8
 
-# 安装系统依赖
+# Install system dependencies.
 RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制requirements.txt并安装Python依赖
+# Install Python dependencies.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制应用代码
+# Copy application code.
 COPY . .
 
-# 创建数据目录
+# Create data directories.
 RUN mkdir -p /app/data/logs
 
-# 设置文件权限
+# Set script permissions.
 RUN chmod +x start.sh
 
-# 启动命令
+# Start command.
 CMD ["./start.sh"] 
