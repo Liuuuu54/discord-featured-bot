@@ -2,6 +2,7 @@
 .env
 
 # 數據庫文件
+data/
 *.db
 *.sqlite
 *.sqlite3
@@ -79,6 +80,13 @@ Thumbs.db
 
 # 日誌文件
 *.log
+
+# 備份與舊版遷移殘留
+backups/
+backup_*/
+backup_before_restore_*.tar.gz
+dc_bot_backup_*.tar.gz
+monthly_points_backup_*.txt
 
 # 臨時文件
 *.tmp

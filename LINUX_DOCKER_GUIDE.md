@@ -92,6 +92,23 @@ chmod +x deploy.sh backup.sh start.sh
 ./deploy.sh deploy
 ```
 
+### 清理旧残留
+
+v2.1.0 以后，旧版月积分文件和 Python 缓存都不是运行必需文件。确认已经备份后，可以清理：
+
+```bash
+# 清理 Python 缓存
+find . -type d -name "__pycache__" -prune -exec rm -rf {} +
+
+# 清理旧版月积分备份
+find . -maxdepth 1 -name "monthly_points_backup_*.txt" -delete
+
+# 清理恢复前临时备份
+find . -maxdepth 1 -name "backup_before_restore_*.tar.gz" -delete
+```
+
+不要删除 `.env`、`data/`、`backups/`，除非你确定不需要当前配置、数据库或备份。
+
 ## 🔧 配置说明
 
 ### 环境变量
