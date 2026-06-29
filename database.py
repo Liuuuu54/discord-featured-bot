@@ -104,6 +104,33 @@ class DatabaseManager:
             )
         ''')
 
+        # 网页接管开关（每个群组一行；启用后 bot 自家书单指令让位给网页版）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS booklist_webpage_takeover (
+                guild_id INTEGER PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # 网页书单发布记录（网页后端转发「发布到 Discord」后，记录书单与 Discord 消息映射，
+        # 便于后续更新时编辑同一条消息；每个网页书单在同一频道仅保留一条有效记录）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS webpage_published_booklists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                webpage_booklist_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                publisher_user_id INTEGER NOT NULL,
+                published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active INTEGER DEFAULT 1,
+                UNIQUE(webpage_booklist_id, channel_id)
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_webpage_published_active ON webpage_published_booklists(message_id, is_active)')
+
         # 公开书单最小索引（不存快照，仅用于重启恢复分页按钮）
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS public_booklist_indexes (
@@ -991,6 +1018,85 @@ class DatabaseManager:
         row = cursor.fetchone()
         conn.close()
         return row[0] if row else None
+
+    def set_booklist_webpage_takeover(self, guild_id: int, enabled: bool):
+        """设置本服书单是否由网页版接管（启用后 bot 自家书单指令让位）。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO booklist_webpage_takeover (guild_id, enabled, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(guild_id) DO UPDATE SET
+                enabled = excluded.enabled,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (guild_id, 1 if enabled else 0))
+        conn.commit()
+        conn.close()
+
+    def is_booklist_webpage_takeover(self, guild_id: int) -> bool:
+        """查询本服书单是否已由网页版接管（默认 False）。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT enabled
+            FROM booklist_webpage_takeover
+            WHERE guild_id = ?
+        ''', (guild_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row[0]) if row else False
+
+    def upsert_webpage_published_booklist(self, webpage_booklist_id: int, guild_id: int,
+                                          channel_id: int, message_id: int,
+                                          publisher_user_id: int):
+        """记录/更新网页书单在某频道的发布消息映射（同一书单+频道唯一）。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO webpage_published_booklists
+                (webpage_booklist_id, guild_id, channel_id, message_id, publisher_user_id, updated_at, is_active)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
+            ON CONFLICT(webpage_booklist_id, channel_id) DO UPDATE SET
+                message_id = excluded.message_id,
+                publisher_user_id = excluded.publisher_user_id,
+                guild_id = excluded.guild_id,
+                updated_at = CURRENT_TIMESTAMP,
+                is_active = 1
+        ''', (webpage_booklist_id, guild_id, channel_id, message_id, publisher_user_id))
+        conn.commit()
+        conn.close()
+
+    def get_webpage_published_booklist(self, webpage_booklist_id: int, channel_id: int) -> Optional[Dict]:
+        """获取网页书单在某频道的有效发布记录（无则返回 None）。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT message_id, guild_id, channel_id, publisher_user_id
+            FROM webpage_published_booklists
+            WHERE webpage_booklist_id = ? AND channel_id = ? AND is_active = 1
+        ''', (webpage_booklist_id, channel_id))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            'message_id': row[0],
+            'guild_id': row[1],
+            'channel_id': row[2],
+            'publisher_user_id': row[3],
+        }
+
+    def deactivate_webpage_published_booklist(self, message_id: int):
+        """消息被删除时停用对应的网页书单发布记录。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE webpage_published_booklists
+            SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+            WHERE message_id = ?
+        ''', (message_id,))
+        conn.commit()
+        conn.close()
 
     def clear_booklist_thread_whitelist(self, guild_id: int):
         """清除本服书单帖白名单。"""

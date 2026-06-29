@@ -25,17 +25,33 @@ class FeaturedMessageBot(commands.Bot):
         )
 
         self.db = DatabaseManager(config.DATABASE_FILE)
+        self.booklist_api_runner = None
 
     async def setup_hook(self):
         """机器人启动时的设置"""
         from app.booklist import BooklistCommands
+        from app.booklist.api import start_booklist_api
         from app.features.featured_system import AppreciatorApplicationView, FeaturedCommands
 
         self.add_view(AppreciatorApplicationView(self))
         await self.add_cog(FeaturedCommands(self))
         await self.add_cog(BooklistCommands(self))
         await self.tree.sync()
+        # 启动书单发布 HTTP 接口（按配置；未启用或未配置密钥时自动跳过）
+        try:
+            self.booklist_api_runner = await start_booklist_api(self)
+        except Exception as e:
+            logger.error(f"❌ 书单发布接口启动失败: {e}")
         logger.info('🤖 机器人设置完成，正在连接...')
+
+    async def close(self):
+        """关闭时清理书单发布 HTTP 站点。"""
+        if self.booklist_api_runner is not None:
+            try:
+                await self.booklist_api_runner.cleanup()
+            except Exception as e:
+                logger.debug(f"清理书单发布接口失败: {e}")
+        await super().close()
 
     async def on_ready(self):
         """机器人准备就绪时的回调"""
@@ -86,6 +102,10 @@ class FeaturedMessageBot(commands.Bot):
             self.db.deactivate_public_booklist_index(payload.message_id)
         except Exception as e:
             logger.debug(f"清理公开书单索引失败(单条): {e}")
+        try:
+            self.db.deactivate_webpage_published_booklist(payload.message_id)
+        except Exception as e:
+            logger.debug(f"清理网页书单发布记录失败(单条): {e}")
 
     async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent):
         """当批量删消息时，清理公开书单最小索引。"""
@@ -94,6 +114,10 @@ class FeaturedMessageBot(commands.Bot):
                 self.db.deactivate_public_booklist_index(message_id)
             except Exception as e:
                 logger.debug(f"清理公开书单索引失败(批量): {e}")
+            try:
+                self.db.deactivate_webpage_published_booklist(message_id)
+            except Exception as e:
+                logger.debug(f"清理网页书单发布记录失败(批量): {e}")
 
     async def on_message(self, message: discord.Message):
         """书单帖发言限制：仅绑定者本人可发言，其他人只能反应。"""

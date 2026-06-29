@@ -278,6 +278,24 @@ class GuildBooklistAdminView(discord.ui.View):
                 inline=False
             )
 
+        takeover = self.cog.db.is_booklist_webpage_takeover(self.guild_id)
+        if takeover:
+            embed.add_field(
+                name="🌐 网页接管",
+                value="已开启：bot 端书单指令已让位，用户将被引导前往网页版。",
+                inline=False
+            )
+            self.toggle_webpage_takeover.label = "关闭网页接管"
+            self.toggle_webpage_takeover.style = discord.ButtonStyle.success
+        else:
+            embed.add_field(
+                name="🌐 网页接管",
+                value="未开启：bot 端书单指令正常工作。",
+                inline=False
+            )
+            self.toggle_webpage_takeover.label = "开启网页接管"
+            self.toggle_webpage_takeover.style = discord.ButtonStyle.danger
+
         if rows:
             lines = []
             for idx, row in enumerate(rows, 1):
@@ -333,6 +351,18 @@ class GuildBooklistAdminView(discord.ui.View):
         affected = self.cog.db.clear_all_booklist_thread_links_in_guild(self.guild_id)
         embed, _ = self.build_embed()
         embed.add_field(name="批量操作结果", value=f"✅ 已清除 {affected} 条书单帖连结绑定。", inline=False)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="开启网页接管", style=discord.ButtonStyle.danger, emoji="🌐", row=2)
+    async def toggle_webpage_takeover(self, interaction: discord.Interaction, button: discord.ui.Button):
+        current = self.cog.db.is_booklist_webpage_takeover(self.guild_id)
+        self.cog.db.set_booklist_webpage_takeover(self.guild_id, not current)
+        embed, _ = self.build_embed()
+        embed.add_field(
+            name="网页接管操作结果",
+            value="✅ 已开启网页接管，bot 书单指令将让位。" if not current else "✅ 已关闭网页接管，bot 书单指令恢复正常。",
+            inline=False,
+        )
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="刷新", style=discord.ButtonStyle.secondary, emoji="🔄", row=1)

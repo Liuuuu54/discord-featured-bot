@@ -17,6 +17,22 @@ class BooklistCommands(commands.Cog):
         self.bot = bot
         self.db = bot.db
 
+    async def _yielded_to_webpage(self, interaction: discord.Interaction) -> bool:
+        """本服已开启网页接管时，bot 书单指令让位并引导用户前往网页版。
+
+        返回 True 表示已拦截（调用方应直接 return）。
+        """
+        guild_id = interaction.guild_id
+        if not guild_id or not self.db.is_booklist_webpage_takeover(guild_id):
+            return False
+
+        await interaction.response.send_message(
+            f"📖 本服书单已迁移至网页版，bot 端书单功能已让位。\n"
+            f"请前往 👉 {config.BOOKLIST_WEBPAGE_URL}",
+            ephemeral=True,
+        )
+        return True
+
     async def cog_load(self):
         """重启后校验公开书单索引；旧版带翻页按钮的消息继续恢复交互。"""
         indexes = self.db.get_active_public_booklist_indexes()
@@ -53,6 +69,8 @@ class BooklistCommands(commands.Cog):
 
     @booklist_group.command(name="添加至书单", description="将当前帖子添加到你的书单（仅自己可见）")
     async def add_to_booklist(self, interaction: discord.Interaction):
+        if await self._yielded_to_webpage(interaction):
+            return
         if not _is_thread_channel(interaction.channel):
             await interaction.response.send_message("❌ 此命令只能在帖子中使用。", ephemeral=True)
             return
@@ -61,6 +79,8 @@ class BooklistCommands(commands.Cog):
 
     @booklist_group.command(name="管理书单", description="管理你的 10 张书单（仅自己可见）")
     async def manage_booklist(self, interaction: discord.Interaction):
+        if await self._yielded_to_webpage(interaction):
+            return
         self.db.ensure_user_booklists(interaction.user.id)
         view = ManageBooklistView(self, interaction.user.id, interaction.guild_id, current_list_id=0)
         embed = view.build_embed()
@@ -68,6 +88,8 @@ class BooklistCommands(commands.Cog):
 
     @booklist_group.command(name="公开书单", description="公开你的书单到当前频道")
     async def publish_booklist(self, interaction: discord.Interaction):
+        if await self._yielded_to_webpage(interaction):
+            return
         if not _is_thread_channel(interaction.channel):
             await interaction.response.send_message("❌ /书单 公开书单 只能在论坛帖中使用。", ephemeral=True)
             return

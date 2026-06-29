@@ -65,6 +65,23 @@ LOG_LEVEL = 'INFO'  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 # 是否输出到控制台
 LOG_TO_CONSOLE = True
 
+# ==================== 书单网页版整合 ====================
+# 书单网页版地址；当某服开启「网页接管」后，bot 的书单指令会引导用户前往此地址
+BOOKLIST_WEBPAGE_URL = os.getenv('BOOKLIST_WEBPAGE_URL', 'https://forum.shimmerday.top')
+
+# 书单发布 HTTP 接口：供网页后端校验用户身份后，转发「发布到 Discord」请求由 bot 发 embed。
+# 安全默认：默认关闭；即使开启，未设置 SECRET 也不会启动，避免暴露开放端点。
+def _env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).strip().lower() in ('1', 'true', 'yes', 'on')
+
+BOOKLIST_API_ENABLED = _env_bool('BOOKLIST_API_ENABLED', False)
+BOOKLIST_API_HOST = os.getenv('BOOKLIST_API_HOST', '0.0.0.0')
+BOOKLIST_API_PORT = int(os.getenv('BOOKLIST_API_PORT', '10820'))
+# 与网页后端约定的共享密钥（请求头 X-API-Key）；为空则接口不启动
+BOOKLIST_API_SECRET = os.getenv('BOOKLIST_API_SECRET', '')
+# 单条 embed 最多渲染的书单条目数（其余以「更多见网页」提示）
+BOOKLIST_API_MAX_ENTRIES = int(os.getenv('BOOKLIST_API_MAX_ENTRIES', '20'))
+
 # ==================== 功能开关 ====================
 # 是否启用表情符号统计
 ENABLE_REACTION_STATS = True
