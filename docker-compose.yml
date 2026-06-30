@@ -13,6 +13,9 @@ services:
       - BOOKLIST_API_SECRET=${BOOKLIST_API_SECRET:-}
       - BOOKLIST_API_PORT=${BOOKLIST_API_PORT:-10820}
       # Other settings use defaults from config.py.
+    ports:
+      # Booklist publish API — reachable by the webpage backend (protect via X-API-Key + IP allowlist).
+      - "10820:10820"
     volumes:
       # Persist data directory.
       - ./data:/app/data
