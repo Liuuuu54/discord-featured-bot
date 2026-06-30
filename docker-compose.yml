@@ -8,6 +8,10 @@ services:
       - LANG=C.UTF-8
       - LC_ALL=C.UTF-8
       - PYTHONIOENCODING=utf-8
+      # Booklist publish API (values come from host .env).
+      - BOOKLIST_API_ENABLED=${BOOKLIST_API_ENABLED:-false}
+      - BOOKLIST_API_SECRET=${BOOKLIST_API_SECRET:-}
+      - BOOKLIST_API_PORT=${BOOKLIST_API_PORT:-10820}
       # Other settings use defaults from config.py.
     volumes:
       # Persist data directory.
