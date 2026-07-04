@@ -28,12 +28,45 @@ class DatabaseManager:
                 featured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 reason TEXT,
                 bot_message_id INTEGER,
-                UNIQUE(thread_id, author_id)
+                UNIQUE(thread_id, message_id)
             )
         ''')
-        
+
         # 添加索引以提高查询性能
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_featured_messages_guild ON featured_messages(guild_id)')
+
+        # 迁移：旧版唯一键为 (thread_id, author_id)（每帖每作者仅一则），
+        # 现改为 (thread_id, message_id)（同作者可精选多则，同一则不可重复）。
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='featured_messages'")
+        row = cursor.fetchone()
+        if row and row[0] and 'thread_id, author_id' in row[0].replace('  ', ' '):
+            cursor.execute('''
+                CREATE TABLE featured_messages_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    thread_id INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    author_id INTEGER NOT NULL,
+                    author_name TEXT NOT NULL,
+                    featured_by_id INTEGER NOT NULL,
+                    featured_by_name TEXT NOT NULL,
+                    featured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reason TEXT,
+                    bot_message_id INTEGER,
+                    UNIQUE(thread_id, message_id)
+                )
+            ''')
+            cursor.execute('''
+                INSERT OR IGNORE INTO featured_messages_new
+                    (id, guild_id, thread_id, message_id, author_id, author_name,
+                     featured_by_id, featured_by_name, featured_at, reason, bot_message_id)
+                SELECT id, guild_id, thread_id, message_id, author_id, author_name,
+                     featured_by_id, featured_by_name, featured_at, reason, bot_message_id
+                FROM featured_messages
+            ''')
+            cursor.execute('DROP TABLE featured_messages')
+            cursor.execute('ALTER TABLE featured_messages_new RENAME TO featured_messages')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_featured_messages_guild ON featured_messages(guild_id)')
 
         # 用户书单主表（每个用户固定 10 张，list_id: 0~9）
         cursor.execute('''
@@ -148,15 +181,15 @@ class DatabaseManager:
         conn.commit()
         conn.close()
     
-    def is_already_featured(self, thread_id: int, author_id: int) -> bool:
-        """检查用户在指定帖子中是否已经被精選过"""
+    def is_already_featured(self, thread_id: int, message_id: int) -> bool:
+        """检查指定留言在该帖中是否已经被精選过（同一则留言不可重复精选）"""
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
-            SELECT 1 FROM featured_messages 
-            WHERE thread_id = ? AND author_id = ?
-        ''', (thread_id, author_id))
+            SELECT 1 FROM featured_messages
+            WHERE thread_id = ? AND message_id = ?
+        ''', (thread_id, message_id))
         
         result = cursor.fetchone()
         conn.close()

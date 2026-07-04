@@ -26,7 +26,8 @@ class DatabaseManagerTest(unittest.TestCase):
             reason="Useful",
             bot_message_id=600,
         )
-        duplicate = self.db.add_featured_message(
+        # 同一作者的另一则留言（不同 message_id）现在允许精选
+        second = self.db.add_featured_message(
             guild_id=100,
             thread_id=200,
             message_id=301,
@@ -35,17 +36,30 @@ class DatabaseManagerTest(unittest.TestCase):
             featured_by_id=501,
             featured_by_name="Other",
         )
+        # 同一则留言（相同 message_id）不可重复精选
+        duplicate = self.db.add_featured_message(
+            guild_id=100,
+            thread_id=200,
+            message_id=300,
+            author_id=400,
+            author_name="Author",
+            featured_by_id=502,
+            featured_by_name="Third",
+        )
 
         self.assertTrue(added)
+        self.assertTrue(second)
         self.assertFalse(duplicate)
-        self.assertTrue(self.db.is_already_featured(200, 400))
+        self.assertTrue(self.db.is_already_featured(200, 300))
+        self.assertTrue(self.db.is_already_featured(200, 301))
+        self.assertFalse(self.db.is_already_featured(200, 999))
 
         featured_info = self.db.get_featured_message_by_id(300, 200)
         self.assertEqual(featured_info["author_name"], "Author")
         self.assertEqual(featured_info["bot_message_id"], 600)
 
         stats = self.db.get_user_stats(400, 100)
-        self.assertEqual(stats["featured_count"], 1)
+        self.assertEqual(stats["featured_count"], 2)
         self.assertEqual(stats["featuring_count"], 0)
 
         curator_stats = self.db.get_user_stats(500, 100)
@@ -53,7 +67,8 @@ class DatabaseManagerTest(unittest.TestCase):
         self.assertEqual(curator_stats["featuring_count"], 1)
 
         self.assertTrue(self.db.remove_featured_message(300, 200))
-        self.assertFalse(self.db.is_already_featured(200, 400))
+        self.assertFalse(self.db.is_already_featured(200, 300))
+        self.assertTrue(self.db.is_already_featured(200, 301))
         self.assertFalse(self.db.remove_featured_message(300, 200))
 
     def test_records_and_referral_ranking_are_paginated(self):

@@ -3,6 +3,9 @@ import logging
 
 import discord
 
+import config
+from app.utils.permissions import can_manage_thread_feature
+
 logger = logging.getLogger(__name__)
 
 class UnfeatureConfirmView(discord.ui.View):
@@ -19,10 +22,9 @@ class UnfeatureConfirmView(discord.ui.View):
     async def confirm_unfeature(self, interaction: discord.Interaction, button: discord.ui.Button):
         """確認取消精選"""
         try:
-            # 檢查是否為樓主
-            thread_owner_id = interaction.channel.owner_id
-            if interaction.user.id != thread_owner_id:
-                await interaction.response.send_message("❌ 只有樓主才能取消精選留言！", ephemeral=True)
+            # 檢查是否為樓主或版主
+            if not can_manage_thread_feature(interaction.user, interaction.channel, config.ADMIN_ROLE_NAMES):
+                await interaction.response.send_message("❌ 只有樓主或版主才能取消精選留言！", ephemeral=True)
                 return
             
             # 檢查精選記錄是否存在
@@ -141,10 +143,10 @@ class FeatureMessageModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         """表單提交處理"""
         try:
-            # 再次檢查是否已經精選過該用戶（防止重複提交）
-            if self.db.is_already_featured(self.thread_id, self.message.author.id):
+            # 再次檢查該留言是否已被精選（防止重複提交）
+            if self.db.is_already_featured(self.thread_id, self.message.id):
                 await interaction.response.send_message(
-                    f"❌ 您已經精選過 {self.message.author.display_name} 的留言了！每個帖子中只能精選每位用戶一次。", 
+                    "❌ 這則留言已經被精選過了！同一則留言不能重複精選。",
                     ephemeral=True
                 )
                 return
@@ -213,7 +215,7 @@ class FeatureMessageModal(discord.ui.Modal):
             )
             
             if not success:
-                await interaction.followup.send("❌ 精選失敗，該用戶可能已經被精選過了。", ephemeral=True)
+                await interaction.followup.send("❌ 精選失敗，這則留言可能已經被精選過了。", ephemeral=True)
                 return
             
             # 記錄成功

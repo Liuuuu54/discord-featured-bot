@@ -19,6 +19,7 @@ from app.features.featured_views import (
     UnfeatureConfirmView,
 )
 from app.utils.discord_links import extract_message_id_from_url
+from app.utils.permissions import can_manage_thread_feature
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +129,9 @@ class FeaturedCommands(commands.Cog):
             thread_id = interaction.channel.id
             thread_owner_id = interaction.channel.owner_id
             
-            # 檢查是否為樓主
-            if interaction.user.id != thread_owner_id:
-                await interaction.response.send_message("❌ 只有樓主才能精選留言！", ephemeral=True)
+            # 檢查是否為樓主或版主
+            if not can_manage_thread_feature(interaction.user, interaction.channel, config.ADMIN_ROLE_NAMES):
+                await interaction.response.send_message("❌ 只有樓主或版主才能精選留言！", ephemeral=True)
                 return
             
             # 檢查是否精選自己的留言
@@ -144,10 +145,10 @@ class FeaturedCommands(commands.Cog):
                 await interaction.response.send_message(f"❌ {content_check['reason']}", ephemeral=True)
                 return
             
-            # 檢查是否已經精選過該用戶
-            if self.db.is_already_featured(thread_id, message.author.id):
+            # 檢查該留言是否已被精選（同一則不可重複）
+            if self.db.is_already_featured(thread_id, message.id):
                 await interaction.response.send_message(
-                    f"❌ 您已經精選過 {message.author.display_name} 的留言了！每個帖子中只能精選每位用戶一次。", 
+                    "❌ 這則留言已經被精選過了！同一則留言不能重複精選。",
                     ephemeral=True
                 )
                 return
@@ -177,9 +178,9 @@ class FeaturedCommands(commands.Cog):
             thread_id = interaction.channel.id
             thread_owner_id = interaction.channel.owner_id
             
-            # 檢查是否為樓主
-            if interaction.user.id != thread_owner_id:
-                await interaction.response.send_message("❌ 只有樓主才能取消精選留言！", ephemeral=True)
+            # 檢查是否為樓主或版主
+            if not can_manage_thread_feature(interaction.user, interaction.channel, config.ADMIN_ROLE_NAMES):
+                await interaction.response.send_message("❌ 只有樓主或版主才能取消精選留言！", ephemeral=True)
                 return
             
             # 檢查精選記錄是否存在
@@ -276,9 +277,9 @@ class FeaturedCommands(commands.Cog):
             thread_id = interaction.channel.id
             thread_owner_id = interaction.channel.owner_id
             
-            # 检查是否为楼主
-            if interaction.user.id != thread_owner_id:
-                await interaction.response.send_message("❌ 只有楼主才能精选留言！", ephemeral=True)
+            # 检查是否为楼主或版主
+            if not can_manage_thread_feature(interaction.user, interaction.channel, config.ADMIN_ROLE_NAMES):
+                await interaction.response.send_message("❌ 只有楼主或版主才能精选留言！", ephemeral=True)
                 return
             
             # 从URL中提取消息ID
@@ -306,10 +307,10 @@ class FeaturedCommands(commands.Cog):
                 await interaction.response.send_message(f"❌ {content_check['reason']}", ephemeral=True)
                 return
             
-            # 检查是否已经精選过该用户
-            if self.db.is_already_featured(thread_id, message.author.id):
+            # 检查该留言是否已被精选（同一则不可重复）
+            if self.db.is_already_featured(thread_id, message.id):
                 await interaction.response.send_message(
-                    f"❌ 您已经精选过 {message.author.display_name} 的留言了！每个帖子中只能精选每位用户一次。", 
+                    "❌ 这则留言已经被精选过了！同一则留言不能重复精选。",
                     ephemeral=True
                 )
                 return
@@ -376,7 +377,7 @@ class FeaturedCommands(commands.Cog):
             )
             
             if not success:
-                await interaction.response.send_message("❌ 精选失败，该用户可能已经被精选过了。", ephemeral=True)
+                await interaction.response.send_message("❌ 精选失败，这则留言可能已经被精选过了。", ephemeral=True)
                 return
             
         except Exception as e:
@@ -409,9 +410,9 @@ class FeaturedCommands(commands.Cog):
             thread_id = interaction.channel.id
             thread_owner_id = interaction.channel.owner_id
             
-            # 检查是否为楼主
-            if interaction.user.id != thread_owner_id:
-                await interaction.response.send_message("❌ 只有楼主才能取消精选留言！", ephemeral=True)
+            # 检查是否为楼主或版主
+            if not can_manage_thread_feature(interaction.user, interaction.channel, config.ADMIN_ROLE_NAMES):
+                await interaction.response.send_message("❌ 只有楼主或版主才能取消精选留言！", ephemeral=True)
                 return
             
             # 从URL中提取消息ID
