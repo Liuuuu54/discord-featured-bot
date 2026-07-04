@@ -659,7 +659,7 @@ class FeaturedCommands(commands.Cog):
                 value=f"**满足以下条件之一即可**：\n"
                       f"• 被引荐至少 {config.APPRECIATOR_MIN_FEATURED} 次\n"
                       f"• 引荐至少 {config.APPRECIATOR_MIN_REFERRALS} 人\n"
-                      f"• 已绑定书单帖链接（可在 `/书单 管理书单` 设置）",
+                      f"• 已绑定书单帖链接（可用 `/书单 守门帖` 绑定）",
                 inline=False
             )
             embed.add_field(

@@ -106,6 +106,37 @@ class BooklistCommands(commands.Cog):
         self.db.ensure_user_booklists(interaction.user.id)
         await interaction.response.send_modal(PublicBooklistModal(self))
 
+    @booklist_group.command(name="守门帖", description="将当前帖设为发言守门（仅楼主可发言，其他人只能加反应）")
+    @app_commands.describe(unbind="解除当前帖的守门绑定")
+    async def guard_booklist_thread(self, interaction: discord.Interaction, unbind: bool = False):
+        # 守门是版务功能，独立于网页接管，不走让位 guard。
+        if unbind:
+            self.db.set_user_booklist_thread_url(interaction.user.id, interaction.guild_id, "")
+            await interaction.response.send_message("✅ 已解除你的书单帖守门绑定。", ephemeral=True)
+            return
+
+        channel = interaction.channel
+        if not _is_thread_channel(channel):
+            await interaction.response.send_message("❌ 此命令只能在帖子/子区中使用。", ephemeral=True)
+            return
+
+        if channel.owner_id != interaction.user.id:
+            await interaction.response.send_message("❌ 只有帖主（楼主）可以为本帖设置守门。", ephemeral=True)
+            return
+
+        whitelist_forum_id = self.db.get_booklist_thread_whitelist(interaction.guild_id)
+        if whitelist_forum_id and channel.parent_id != whitelist_forum_id:
+            await interaction.response.send_message("❌ 本帖不在书单帖白名单论坛内，无法设置守门。", ephemeral=True)
+            return
+
+        url = f"https://discord.com/channels/{interaction.guild_id}/{channel.id}"
+        self.db.set_user_booklist_thread_url(interaction.user.id, interaction.guild_id, url)
+        await interaction.response.send_message(
+            "✅ 已为本帖开启书单帖守门：仅你（楼主）可发言，其他人只能添加反应。\n"
+            "如需关闭，使用 `/书单 守门帖 unbind:True`。",
+            ephemeral=True,
+        )
+
     @booklist_group.command(name="全服书单列表", description="查看全服书单概览并设置书单帖白名单（管理组）")
     async def guild_booklist_overview(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
