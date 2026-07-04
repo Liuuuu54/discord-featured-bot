@@ -67,7 +67,7 @@ LOG_TO_CONSOLE = True
 
 # ==================== 书单网页版整合 ====================
 # 书单网页版地址；当某服开启「网页接管」后，bot 的书单指令会引导用户前往此地址
-BOOKLIST_WEBPAGE_URL = os.getenv('BOOKLIST_WEBPAGE_URL', 'https://forum.shimmerday.top')
+BOOKLIST_WEBPAGE_URL = os.getenv('BOOKLIST_WEBPAGE_URL', 'https://odysseia-forum-webpage.pages.dev/booklists')
 
 # 书单发布 HTTP 接口：供网页后端校验用户身份后，转发「发布到 Discord」请求由 bot 发 embed。
 # 安全默认：默认关闭；即使开启，未设置 SECRET 也不会启动，避免暴露开放端点。
