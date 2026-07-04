@@ -131,10 +131,10 @@ class BooklistCommands(commands.Cog):
 
         url = f"https://discord.com/channels/{interaction.guild_id}/{channel.id}"
         self.db.set_user_booklist_thread_url(interaction.user.id, interaction.guild_id, url)
+        # 守门状态需公示，让本帖成员知悉（非 ephemeral）
         await interaction.response.send_message(
-            "✅ 已为本帖开启书单帖守门：仅你（楼主）可发言，其他人只能添加反应。\n"
-            "如需关闭，使用 `/书单 守门帖 unbind:True`。",
-            ephemeral=True,
+            f"📌 本帖已开启**书单守门**：仅楼主 <@{interaction.user.id}> 可发言，其他人只能添加反应。\n"
+            f"（楼主可用 `/书单 守门帖 unbind:True` 解除）"
         )
 
     @booklist_group.command(name="全服书单列表", description="查看全服书单概览并设置书单帖白名单（管理组）")
