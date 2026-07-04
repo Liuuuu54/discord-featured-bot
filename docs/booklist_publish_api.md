@@ -111,6 +111,37 @@ X-API-Key: <BOOKLIST_API_SECRET>
 
 ---
 
+## `POST /booklist/unpublish`
+
+删除网页书单在 Discord 的发布 embed（用户在网页取消发布 / 删除书单时调用）。
+因为 embed 是本 bot 发的，**只有本 bot 能删**（其它 bot 无权删除他人消息）。
+
+### 请求体（JSON）
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `booklist_id` | int | ✅ | 网页书单 ID |
+| `thread_url` | string | ⬜ | 指定帖：仅删该帖内的发布消息；**不传则删除该书单在所有帖的发布消息**（书单被删时用） |
+
+### 成功响应 `200`
+
+```json
+{ "ok": true, "requested": 1, "deleted": 1 }
+```
+
+- `requested`：匹配到的发布记录数；`deleted`：实际删除/已消失的数量。
+- 消息本就不存在（已被手动删）也计入 `deleted`，并停用映射，接口幂等。
+
+### 错误响应
+
+| 状态 | `error` | 含义 |
+|---|---|---|
+| `401` | `unauthorized` | 密钥缺失或错误 |
+| `400` | `invalid json` / `missing required field: booklist_id` / `booklist_id must be an integer` / `invalid thread_url` | 参数问题 |
+| `503` | `bot not ready` | bot 尚未就绪 |
+
+---
+
 ## 更新语义（幂等）
 
 每个 `(booklist_id, thread_url 对应的 thread)` 在 bot 侧只保留一条有效消息映射

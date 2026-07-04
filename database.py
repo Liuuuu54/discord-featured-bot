@@ -1131,6 +1131,22 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
+    def get_active_webpage_published_by_booklist(self, webpage_booklist_id: int) -> List[Dict]:
+        """列出某网页书单当前所有有效的发布记录（可能发布到多个帖）。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT message_id, channel_id, guild_id
+            FROM webpage_published_booklists
+            WHERE webpage_booklist_id = ? AND is_active = 1
+        ''', (webpage_booklist_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {'message_id': r[0], 'channel_id': r[1], 'guild_id': r[2]}
+            for r in rows
+        ]
+
     def clear_booklist_thread_whitelist(self, guild_id: int):
         """清除本服书单帖白名单。"""
         conn = sqlite3.connect(self.db_file)

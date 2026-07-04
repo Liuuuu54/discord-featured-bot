@@ -228,6 +228,71 @@ class BooklistPublishAPI:
             "message_url": message.jump_url,
         })
 
+    async def _delete_published_message(self, channel_id: int, message_id: int) -> bool:
+        """删除一条已发布的书单 embed（bot 自己发的消息，可删）。返回是否已消失/删除成功。"""
+        try:
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                channel = await self.bot.fetch_channel(channel_id)
+            message = await channel.fetch_message(message_id)
+            await message.delete()
+            return True
+        except discord.NotFound:
+            return True  # 消息或频道已不在，视为已删除
+        except Exception as e:
+            logger.warning(f"删除网页书单消息失败 channel={channel_id} message={message_id}: {e}")
+            return False
+        finally:
+            # on_raw_message_delete 也会停用；此处显式停用，幂等
+            self.bot.db.deactivate_webpage_published_booklist(message_id)
+
+    async def handle_unpublish(self, request: web.Request) -> web.Response:
+        """删除网页书单在 Discord 的发布消息。
+
+        body: { booklist_id, thread_url?(可选) }
+        - 带 thread_url：仅删该帖内的发布消息。
+        - 不带：删除该书单在所有帖的发布消息（书单被删除时用）。
+        """
+        if not self._check_auth(request):
+            return web.json_response({"ok": False, "error": "unauthorized"}, status=401)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"ok": False, "error": "invalid json"}, status=400)
+
+        booklist_id_raw = payload.get("booklist_id")
+        if booklist_id_raw is None:
+            return web.json_response({"ok": False, "error": "missing required field: booklist_id"}, status=400)
+        try:
+            booklist_id = int(booklist_id_raw)
+        except (TypeError, ValueError):
+            return web.json_response({"ok": False, "error": "booklist_id must be an integer"}, status=400)
+
+        if not self.bot.is_ready():
+            return web.json_response({"ok": False, "error": "bot not ready"}, status=503)
+
+        thread_url = payload.get("thread_url")
+        targets = []
+        if thread_url:
+            parsed = _parse_thread_url(thread_url)
+            if not parsed:
+                return web.json_response({"ok": False, "error": "invalid thread_url"}, status=400)
+            _, thread_id = parsed
+            rec = self.bot.db.get_webpage_published_booklist(booklist_id, thread_id)
+            if rec:
+                targets.append({"message_id": rec["message_id"], "channel_id": rec["channel_id"]})
+        else:
+            targets = self.bot.db.get_active_webpage_published_by_booklist(booklist_id)
+
+        deleted = 0
+        for t in targets:
+            if await self._delete_published_message(t["channel_id"], t["message_id"]):
+                deleted += 1
+
+        logger.info(f"🗑️ 网页书单撤除 | booklist={booklist_id} | 目标={len(targets)} | 已删={deleted}")
+        return web.json_response({"ok": True, "requested": len(targets), "deleted": deleted})
+
 
 async def start_booklist_api(bot) -> Optional[web.AppRunner]:
     """在 bot 事件循环内启动书单发布 HTTP 站点。返回 runner（用于关闭），未启动则返回 None。"""
@@ -242,6 +307,7 @@ async def start_booklist_api(bot) -> Optional[web.AppRunner]:
     app = web.Application()
     app.add_routes([
         web.post("/booklist/publish", api.handle_publish),
+        web.post("/booklist/unpublish", api.handle_unpublish),
         web.get("/healthz", api.health),
     ])
 
