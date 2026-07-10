@@ -163,7 +163,8 @@ X-API-Key: <BOOKLIST_API_SECRET>
 2. 解析并校验请求体；解析 `thread_url` → `(guild_id, thread_id)`。
 3. 取得目标频道，要求是**论坛帖**（Thread 且 parent 为 forum）。
 4. 要求 `thread.owner_id == discord_user_id`（只有帖主能在本帖发布其书单）。
-5. 渲染单条 embed（条目超过 `MAX_ENTRIES` 时提示前往网页）。
+5. 渲染单条 embed（条目超过 `MAX_ENTRIES` 时提示前往网页）；embed 下方附一颗
+   「在网页查看书单」link 按钮，指向 `{BOOKLIST_WEBPAGE_URL}/{booklist_id}`。
 6. 发布或编辑消息，写入/更新映射。
 
 ---

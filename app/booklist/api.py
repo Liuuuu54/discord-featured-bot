@@ -107,6 +107,19 @@ def _build_embed(payload: dict, publisher_user_id: int) -> discord.Embed:
     return embed
 
 
+def _build_view(booklist_id) -> discord.ui.View:
+    """在 embed 下方附一颗跳回网页书单页的 link 按钮（无 custom_id，重启后仍有效）。"""
+    view = discord.ui.View(timeout=None)
+    url = f"{config.BOOKLIST_WEBPAGE_URL.rstrip('/')}/{booklist_id}"
+    view.add_item(discord.ui.Button(
+        label="在网页查看书单",
+        url=url,
+        style=discord.ButtonStyle.link,
+        emoji="📖",
+    ))
+    return view
+
+
 class BooklistPublishAPI:
     def __init__(self, bot):
         self.bot = bot
@@ -182,6 +195,7 @@ class BooklistPublishAPI:
 
         # ── 发布或更新 ──────────────────────────────────────
         embed = _build_embed(payload, discord_user_id)
+        view = _build_view(booklist_id)
         existing = self.bot.db.get_webpage_published_booklist(booklist_id, thread_id)
 
         updated = False
@@ -189,7 +203,7 @@ class BooklistPublishAPI:
         if existing:
             try:
                 message = await channel.fetch_message(existing["message_id"])
-                await message.edit(embed=embed)
+                await message.edit(embed=embed, view=view)
                 updated = True
             except discord.NotFound:
                 message = None  # 旧消息已被删除，改为新发
@@ -201,7 +215,7 @@ class BooklistPublishAPI:
 
         if message is None:
             try:
-                message = await channel.send(embed=embed)
+                message = await channel.send(embed=embed, view=view)
                 updated = False
             except discord.Forbidden:
                 return web.json_response({"ok": False, "error": "no permission to send in thread"}, status=403)
