@@ -1,3 +1,5 @@
+import logging
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -7,6 +9,9 @@ from app.booklist.modals import AddToBooklistModal, PublicBooklistModal
 from app.booklist.views import GuildBooklistAdminView, ManageBooklistView, PublicBooklistPagerView
 from app.utils.discord_channels import is_thread_channel as _is_thread_channel
 from app.utils.permissions import has_admin_permission
+
+logger = logging.getLogger(__name__)
+
 
 class BooklistCommands(commands.Cog):
     """书单独立模块"""
@@ -136,6 +141,53 @@ class BooklistCommands(commands.Cog):
             f"📌 本帖已开启**书单守门**：仅楼主 <@{interaction.user.id}> 可发言，其他人只能添加反应。\n"
             f"（楼主可用 `/书单 守门帖 unbind:True` 解除）"
         )
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """书单帖发言限制：仅绑定者本人可发言，其他人只能反应。"""
+        if message.author.bot:
+            return
+
+        if message.guild and isinstance(message.channel, discord.Thread):
+            bound_owner_id = self.db.get_booklist_thread_owner(message.guild.id, message.channel.id)
+            if bound_owner_id and message.author.id != bound_owner_id:
+                try:
+                    await message.delete()
+                    logger.info(
+                        f"🧹 已删除书单帖非楼主留言 | 用户: {message.author.name}({message.author.id}) | "
+                        f"帖子: {message.channel.id} | 群组: {message.guild.id}"
+                    )
+                except discord.Forbidden:
+                    logger.warning(
+                        f"⚠️ 无权限删除书单帖留言 | 用户: {message.author.id} | 帖子: {message.channel.id} | 群组: {message.guild.id}"
+                    )
+                except Exception as e:
+                    logger.warning(f"删除书单帖留言失败: {e}")
+
+    @commands.Cog.listener()
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
+        """当消息被删除时，清理公开书单最小索引，避免数据膨胀。"""
+        try:
+            self.db.deactivate_public_booklist_index(payload.message_id)
+        except Exception as e:
+            logger.debug(f"清理公开书单索引失败(单条): {e}")
+        try:
+            self.db.deactivate_webpage_published_booklist(payload.message_id)
+        except Exception as e:
+            logger.debug(f"清理网页书单发布记录失败(单条): {e}")
+
+    @commands.Cog.listener()
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent):
+        """当批量删消息时，清理公开书单最小索引。"""
+        for message_id in payload.message_ids:
+            try:
+                self.db.deactivate_public_booklist_index(message_id)
+            except Exception as e:
+                logger.debug(f"清理公开书单索引失败(批量): {e}")
+            try:
+                self.db.deactivate_webpage_published_booklist(message_id)
+            except Exception as e:
+                logger.debug(f"清理网页书单发布记录失败(批量): {e}")
 
     @booklist_group.command(name="全服书单列表", description="查看全服书单概览并设置书单帖白名单（管理组）")
     async def guild_booklist_overview(self, interaction: discord.Interaction):

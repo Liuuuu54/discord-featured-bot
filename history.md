@@ -1,5 +1,13 @@
 # 更新历史
 
+## v2.2.0
+
+- **书单网页接管**: 新增每服开关，开启后 bot 端 `/书单 添加/管理/公开` 让位，引导用户前往网页版；管理指令不受影响。
+- **书单发布 HTTP 接口**: 新增 `app/booklist/api.py`（`POST /booklist/publish`、`POST /booklist/unpublish`、`GET /healthz`），供 webpage 后端校验身份后转发「发布到 Discord」请求；已与 webpage 完成对接上线。发布 embed 附带「在网页查看书单」连结按钮。
+- **独立守门帖指令**: `/书单 守门帖` 拆分为独立指令，网页接管模式下仍可用；启用通知改为公开消息。
+- **架构解耦**: `app/bot/client.py` 不再直接持有 booklist 领域逻辑，`on_message`/`on_raw_message_delete`/`on_raw_bulk_message_delete` 中的书单相关处理迁移为 `BooklistCommands` cog 自身的监听器。
+- **清理**: 移除已无引用的兼容导出文件 `booklist_system.py`。
+
 ## v2.1.0
 
 - **架构解耦**: 完成六阶段重构，拆分启动流程、Bot client、精选指令层、书单子系统、互动 View 与共用 utils。

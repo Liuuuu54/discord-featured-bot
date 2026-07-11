@@ -1,5 +1,0 @@
-"""Compatibility wrapper for the booklist subsystem."""
-
-from app.booklist.commands import BooklistCommands
-
-__all__ = ["BooklistCommands"]

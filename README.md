@@ -1,6 +1,6 @@
 # 留言精选 Discord Bot
 
-> 版本：2.1.0
+> 版本：2.2.0
 
 一个专为Discord论坛设计的留言精选机器人，允许楼主将优质留言设为精选。支持精选记录、引荐统计与书单功能。
 
@@ -140,7 +140,7 @@ python -m unittest discover -s tests
 重构后可用以下命令做快速语法检查：
 
 ```bash
-python -m py_compile bot.py booklist_system.py database.py config.py config_check.py db_checker.py guild_data_extractor.py app/main.py app/logging_config.py app/bot/client.py app/features/featured_system.py app/features/featured_views.py app/features/feature_actions.py app/features/record_views.py app/features/stats_views.py app/features/appreciator_views.py app/utils/discord_channels.py app/utils/discord_links.py app/utils/permissions.py app/utils/text.py tests/test_database_manager.py
+python -m py_compile bot.py database.py config.py config_check.py db_checker.py guild_data_extractor.py app/main.py app/logging_config.py app/bot/client.py app/booklist/commands.py app/features/featured_system.py app/features/featured_views.py app/features/feature_actions.py app/features/record_views.py app/features/stats_views.py app/features/appreciator_views.py app/utils/discord_channels.py app/utils/discord_links.py app/utils/permissions.py app/utils/text.py tests/test_database_manager.py
 ```
 
 </details>

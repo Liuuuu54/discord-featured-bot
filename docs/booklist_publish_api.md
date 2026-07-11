@@ -19,7 +19,7 @@
 | `BOOKLIST_API_HOST` | `0.0.0.0` | 监听地址 |
 | `BOOKLIST_API_PORT` | `10820` | 监听端口 |
 | `BOOKLIST_API_MAX_ENTRIES` | `20` | 单条 embed 最多渲染的条目数，超出以「更多见网页」提示 |
-| `BOOKLIST_WEBPAGE_URL` | `https://forum.shimmerday.top` | 「让位」时引导用户前往的网页地址（与本接口独立） |
+| `BOOKLIST_WEBPAGE_URL` | `https://odysseia-forum-webpage.pages.dev/booklists` | 「让位」时引导用户前往的网页地址（与本接口独立） |
 
 ---
 

@@ -96,53 +96,6 @@ class FeaturedMessageBot(commands.Bot):
         except Exception as e:
             logger.debug(f"记录交互日志失败: {e}")
 
-    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
-        """当消息被删除时，清理公开书单最小索引，避免数据膨胀。"""
-        try:
-            self.db.deactivate_public_booklist_index(payload.message_id)
-        except Exception as e:
-            logger.debug(f"清理公开书单索引失败(单条): {e}")
-        try:
-            self.db.deactivate_webpage_published_booklist(payload.message_id)
-        except Exception as e:
-            logger.debug(f"清理网页书单发布记录失败(单条): {e}")
-
-    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent):
-        """当批量删消息时，清理公开书单最小索引。"""
-        for message_id in payload.message_ids:
-            try:
-                self.db.deactivate_public_booklist_index(message_id)
-            except Exception as e:
-                logger.debug(f"清理公开书单索引失败(批量): {e}")
-            try:
-                self.db.deactivate_webpage_published_booklist(message_id)
-            except Exception as e:
-                logger.debug(f"清理网页书单发布记录失败(批量): {e}")
-
-    async def on_message(self, message: discord.Message):
-        """书单帖发言限制：仅绑定者本人可发言，其他人只能反应。"""
-        if message.author.bot:
-            return
-
-        if message.guild and isinstance(message.channel, discord.Thread):
-            bound_owner_id = self.db.get_booklist_thread_owner(message.guild.id, message.channel.id)
-            if bound_owner_id and message.author.id != bound_owner_id:
-                try:
-                    await message.delete()
-                    logger.info(
-                        f"🧹 已删除书单帖非楼主留言 | 用户: {message.author.name}({message.author.id}) | "
-                        f"帖子: {message.channel.id} | 群组: {message.guild.id}"
-                    )
-                except discord.Forbidden:
-                    logger.warning(
-                        f"⚠️ 无权限删除书单帖留言 | 用户: {message.author.id} | 帖子: {message.channel.id} | 群组: {message.guild.id}"
-                    )
-                except Exception as e:
-                    logger.warning(f"删除书单帖留言失败: {e}")
-                return
-
-        await self.process_commands(message)
-
     async def on_command_error(self, ctx, error):
         """处理命令错误"""
         if isinstance(error, commands.CommandNotFound):
