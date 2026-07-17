@@ -32,10 +32,12 @@ class FeaturedMessageBot(commands.Bot):
         from app.booklist import BooklistCommands
         from app.booklist.api import start_booklist_api
         from app.features.featured_system import AppreciatorApplicationView, FeaturedCommands
+        from app.features.welcome import WelcomeCommands
 
         self.add_view(AppreciatorApplicationView(self))
         await self.add_cog(FeaturedCommands(self))
         await self.add_cog(BooklistCommands(self))
+        await self.add_cog(WelcomeCommands(self))
         await self.tree.sync()
         # 启动书单发布 HTTP 接口（按配置；未启用或未配置密钥时自动跳过）
         try:
@@ -63,7 +65,7 @@ class FeaturedMessageBot(commands.Bot):
         logger.info(f'🌐 连接状态: 已连接到 {len(self.guilds)} 个服务器')
         logger.info('=' * 50)
         logger.info('✅ 机器人已准备就绪，可以开始使用！')
-        logger.info('📋 可用命令: /留言 精选, /留言 精选记录, /留言 帖子统计, /留言 总排行, /留言 鉴赏申请窗口, /留言 全服精选列表, /书单 添加至书单, /书单 管理书单, /书单 公开书单, /书单 全服书单列表')
+        logger.info('📋 可用命令: /留言 精选, /留言 精选记录, /留言 帖子统计, /留言 总排行, /留言 鉴赏申请窗口, /留言 全服精选列表, /书单 添加至书单, /书单 管理书单, /书单 公开书单, /书单 全服书单列表, /欢迎 设置频道, /欢迎 关闭')
         logger.info('=' * 50)
 
     async def on_interaction(self, interaction: discord.Interaction):

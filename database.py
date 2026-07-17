@@ -177,7 +177,17 @@ class DatabaseManager:
             )
         ''')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_public_booklist_indexes_active ON public_booklist_indexes(is_active)')
-        
+
+        # 新成员欢迎设置（每服一个欢迎频道开关）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS welcome_settings (
+                guild_id INTEGER PRIMARY KEY,
+                channel_id INTEGER,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         conn.commit()
         conn.close()
     
@@ -1078,6 +1088,47 @@ class DatabaseManager:
         row = cursor.fetchone()
         conn.close()
         return bool(row[0]) if row else False
+
+    def set_welcome_channel(self, guild_id: int, channel_id: int):
+        """设置本服新成员欢迎频道并启用。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO welcome_settings (guild_id, channel_id, enabled, updated_at)
+            VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(guild_id) DO UPDATE SET
+                channel_id = excluded.channel_id,
+                enabled = 1,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (guild_id, channel_id))
+        conn.commit()
+        conn.close()
+
+    def disable_welcome(self, guild_id: int):
+        """关闭本服新成员欢迎消息（保留已设置的频道记录）。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE welcome_settings SET enabled = 0, updated_at = CURRENT_TIMESTAMP
+            WHERE guild_id = ?
+        ''', (guild_id,))
+        conn.commit()
+        conn.close()
+
+    def get_welcome_channel(self, guild_id: int) -> Optional[int]:
+        """获取本服已启用的欢迎频道ID；未设置或已关闭则返回 None。"""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT channel_id, enabled
+            FROM welcome_settings
+            WHERE guild_id = ?
+        ''', (guild_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row or not row[1]:
+            return None
+        return row[0]
 
     def upsert_webpage_published_booklist(self, webpage_booklist_id: int, guild_id: int,
                                           channel_id: int, message_id: int,
